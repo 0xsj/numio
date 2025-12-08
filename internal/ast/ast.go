@@ -6,7 +6,7 @@ package ast
 import (
 	"strings"
 
-	"github.com/0xsj/numio/internal/types"
+	"github.com/0xsj/numio/pkg/types"
 )
 
 // Node is the interface implemented by all AST nodes.

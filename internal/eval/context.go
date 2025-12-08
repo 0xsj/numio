@@ -7,9 +7,16 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/0xsj/numio/internal/cache"
-	"github.com/0xsj/numio/internal/types"
+	"github.com/0xsj/numio/pkg/types"
 )
+
+// RateCacheAdapter is the interface for rate cache operations.
+// This allows the engine to inject the concrete cache implementation.
+type RateCacheAdapter interface {
+	GetRate(from, to string) (float64, bool)
+	Convert(amount float64, from, to string) (float64, bool)
+	ConvertValue(v types.Value, target string) (types.Value, bool)
+}
 
 // Context holds the evaluation state including variables and rate cache.
 type Context struct {
@@ -18,8 +25,8 @@ type Context struct {
 	// Variables map
 	variables map[string]types.Value
 
-	// Rate cache for currency/crypto conversions
-	rateCache *cache.RateCache
+	// Rate cache adapter for currency/crypto conversions
+	rateCache RateCacheAdapter
 
 	// Previous result (for _ and ANS)
 	previous types.Value
@@ -45,7 +52,7 @@ type LineResult struct {
 func NewContext() *Context {
 	return &Context{
 		variables: make(map[string]types.Value),
-		rateCache: cache.New(),
+		rateCache: nil,
 		previous:  types.Empty(),
 		lines:     nil,
 		precision: 2,
@@ -53,13 +60,11 @@ func NewContext() *Context {
 	}
 }
 
-// NewContextWithCache creates a context with an existing rate cache.
-func NewContextWithCache(rc *cache.RateCache) *Context {
-	ctx := NewContext()
-	if rc != nil {
-		ctx.rateCache = rc
-	}
-	return ctx
+// SetRateCacheAdapter sets the rate cache adapter.
+func (c *Context) SetRateCacheAdapter(adapter RateCacheAdapter) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.rateCache = adapter
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -284,8 +289,12 @@ func (c *Context) GroupedTotals() []types.Value {
 			if lr.Value.Curr != nil {
 				code := lr.Value.Curr.Code
 				// Convert to USD for summing
-				if usdAmount, ok := c.rateCache.Convert(lr.Value.Num, code, "USD"); ok {
-					currencyTotals["USD"] += usdAmount
+				if c.rateCache != nil {
+					if usdAmount, ok := c.rateCache.Convert(lr.Value.Num, code, "USD"); ok {
+						currencyTotals["USD"] += usdAmount
+					} else {
+						currencyTotals[code] += lr.Value.Num
+					}
 				} else {
 					currencyTotals[code] += lr.Value.Num
 				}
@@ -296,8 +305,10 @@ func (c *Context) GroupedTotals() []types.Value {
 			if lr.Value.Crypto != nil {
 				code := lr.Value.Crypto.Code
 				// Convert to USD for summing
-				if usdAmount, ok := c.rateCache.Convert(lr.Value.Num, code, "USD"); ok {
-					currencyTotals["USD"] += usdAmount
+				if c.rateCache != nil {
+					if usdAmount, ok := c.rateCache.Convert(lr.Value.Num, code, "USD"); ok {
+						currencyTotals["USD"] += usdAmount
+					}
 				}
 			}
 
@@ -324,8 +335,13 @@ func (c *Context) GroupedTotals() []types.Value {
 	if len(currencyTotals) > 0 {
 		usdTotal := currencyTotals["USD"]
 		if lastCurrency != nil && lastCurrency.Code != "USD" {
-			if converted, ok := c.rateCache.Convert(usdTotal, "USD", lastCurrency.Code); ok {
-				results = append(results, types.CurrencyValue(converted, lastCurrency))
+			if c.rateCache != nil {
+				if converted, ok := c.rateCache.Convert(usdTotal, "USD", lastCurrency.Code); ok {
+					results = append(results, types.CurrencyValue(converted, lastCurrency))
+				} else {
+					usdCurr := types.ParseCurrency("USD")
+					results = append(results, types.CurrencyValue(usdTotal, usdCurr))
+				}
 			} else {
 				usdCurr := types.ParseCurrency("USD")
 				results = append(results, types.CurrencyValue(usdTotal, usdCurr))
@@ -357,32 +373,12 @@ func (c *Context) GroupedTotals() []types.Value {
 // RATE CACHE
 // ════════════════════════════════════════════════════════════════
 
-// RateCache returns the rate cache.
-func (c *Context) RateCache() *cache.RateCache {
-	return c.rateCache
-}
-
-// SetRateCache sets the rate cache.
-func (c *Context) SetRateCache(rc *cache.RateCache) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.rateCache = rc
-}
-
 // GetRate gets an exchange rate.
 func (c *Context) GetRate(from, to string) (float64, bool) {
 	if c.rateCache == nil {
 		return 0, false
 	}
 	return c.rateCache.GetRate(from, to)
-}
-
-// SetRate sets an exchange rate.
-func (c *Context) SetRate(from, to string, rate float64) {
-	if c.rateCache == nil {
-		c.rateCache = cache.New()
-	}
-	c.rateCache.SetRate(from, to, rate)
 }
 
 // Convert converts an amount between currencies.
@@ -471,14 +467,14 @@ func (c *Context) Reset() {
 // CLONE / SNAPSHOT
 // ════════════════════════════════════════════════════════════════
 
-// Clone creates a copy of the context (shares rate cache).
+// Clone creates a copy of the context (does not copy rate cache adapter).
 func (c *Context) Clone() *Context {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
 	clone := &Context{
 		variables: make(map[string]types.Value, len(c.variables)),
-		rateCache: c.rateCache, // Shared
+		rateCache: nil, // Will be set by engine
 		previous:  c.previous,
 		lines:     make([]LineResult, len(c.lines)),
 		precision: c.precision,

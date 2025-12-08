@@ -7,31 +7,60 @@ import (
 	"strings"
 
 	"github.com/0xsj/numio/internal/ast"
-	"github.com/0xsj/numio/internal/cache"
-	"github.com/0xsj/numio/internal/errors"
 	"github.com/0xsj/numio/internal/eval"
 	"github.com/0xsj/numio/internal/parser"
-	"github.com/0xsj/numio/internal/types"
+	"github.com/0xsj/numio/pkg/cache"
+	"github.com/0xsj/numio/pkg/errors"
+	"github.com/0xsj/numio/pkg/types"
 )
 
 // Engine is the main entry point for numio calculations.
 type Engine struct {
 	evaluator *eval.Evaluator
+	rateCache *cache.RateCache
 }
 
 // New creates a new Engine with default settings.
 func New() *Engine {
+	rc := cache.New()
+	ctx := eval.NewContext()
+	ctx.SetRateCacheAdapter(&rateCacheAdapter{rc: rc})
+
 	return &Engine{
-		evaluator: eval.New(),
+		evaluator: eval.NewWithContext(ctx),
+		rateCache: rc,
 	}
 }
 
 // NewWithCache creates an Engine with an existing rate cache.
 func NewWithCache(rc *cache.RateCache) *Engine {
-	ctx := eval.NewContextWithCache(rc)
+	if rc == nil {
+		rc = cache.New()
+	}
+	ctx := eval.NewContext()
+	ctx.SetRateCacheAdapter(&rateCacheAdapter{rc: rc})
+
 	return &Engine{
 		evaluator: eval.NewWithContext(ctx),
+		rateCache: rc,
 	}
+}
+
+// rateCacheAdapter adapts pkg/cache.RateCache to the interface expected by eval.
+type rateCacheAdapter struct {
+	rc *cache.RateCache
+}
+
+func (a *rateCacheAdapter) GetRate(from, to string) (float64, bool) {
+	return a.rc.GetRate(from, to)
+}
+
+func (a *rateCacheAdapter) Convert(amount float64, from, to string) (float64, bool) {
+	return a.rc.Convert(amount, from, to)
+}
+
+func (a *rateCacheAdapter) ConvertValue(v types.Value, target string) (types.Value, bool) {
+	return a.rc.ConvertValue(v, target)
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -81,6 +110,7 @@ func (e *Engine) EvalFile(content string) []types.Value {
 func (e *Engine) EvalPreview(input string) types.Value {
 	// Clone context for preview
 	ctx := e.evaluator.Context().Clone()
+	ctx.SetRateCacheAdapter(&rateCacheAdapter{rc: e.rateCache})
 	tempEval := eval.NewWithContext(ctx)
 
 	trimmed := strings.TrimSpace(input)
@@ -187,42 +217,42 @@ func (e *Engine) LineCount() int {
 
 // RateCache returns the rate cache.
 func (e *Engine) RateCache() *cache.RateCache {
-	return e.evaluator.Context().RateCache()
+	return e.rateCache
 }
 
 // SetRate sets an exchange rate.
 func (e *Engine) SetRate(from, to string, rate float64) {
-	e.evaluator.Context().SetRate(from, to, rate)
+	e.rateCache.SetRate(from, to, rate)
 }
 
 // GetRate gets an exchange rate.
 func (e *Engine) GetRate(from, to string) (float64, bool) {
-	return e.evaluator.Context().GetRate(from, to)
+	return e.rateCache.GetRate(from, to)
 }
 
 // ApplyRawRates applies rates from an API response.
 func (e *Engine) ApplyRawRates(rates map[string]float64) {
-	e.evaluator.Context().RateCache().ApplyRawRates(rates)
+	e.rateCache.ApplyRawRates(rates)
 }
 
 // SaveRatesToFile saves rates to the file cache.
 func (e *Engine) SaveRatesToFile() error {
-	return e.evaluator.Context().RateCache().SaveToFile()
+	return e.rateCache.SaveToFile()
 }
 
 // LoadRatesFromFile loads rates from the file cache.
 func (e *Engine) LoadRatesFromFile() bool {
-	return e.evaluator.Context().RateCache().LoadFromFile()
+	return e.rateCache.LoadFromFile()
 }
 
 // IsRateCacheValid returns true if the rate cache is not expired.
 func (e *Engine) IsRateCacheValid() bool {
-	return e.evaluator.Context().RateCache().IsValid()
+	return e.rateCache.IsValid()
 }
 
 // Convert converts an amount between currencies/assets.
 func (e *Engine) Convert(amount float64, from, to string) (float64, bool) {
-	return e.evaluator.Context().Convert(amount, from, to)
+	return e.rateCache.Convert(amount, from, to)
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -278,8 +308,12 @@ func (e *Engine) Reset() {
 
 // Clone creates a copy of the engine (shares rate cache).
 func (e *Engine) Clone() *Engine {
+	ctx := e.evaluator.Context().Clone()
+	ctx.SetRateCacheAdapter(&rateCacheAdapter{rc: e.rateCache})
+
 	return &Engine{
-		evaluator: eval.NewWithContext(e.evaluator.Context().Clone()),
+		evaluator: eval.NewWithContext(ctx),
+		rateCache: e.rateCache,
 	}
 }
 

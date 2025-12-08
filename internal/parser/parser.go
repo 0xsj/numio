@@ -8,10 +8,10 @@ import (
 	"strings"
 
 	"github.com/0xsj/numio/internal/ast"
-	"github.com/0xsj/numio/internal/errors"
 	"github.com/0xsj/numio/internal/lexer"
 	"github.com/0xsj/numio/internal/token"
-	"github.com/0xsj/numio/internal/types"
+	"github.com/0xsj/numio/pkg/errors"
+	"github.com/0xsj/numio/pkg/types"
 )
 
 // Parser parses tokens into an AST.

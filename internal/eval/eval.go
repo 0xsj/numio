@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/0xsj/numio/internal/ast"
-	"github.com/0xsj/numio/internal/types"
+	"github.com/0xsj/numio/pkg/types"
 )
 
 // Evaluator evaluates AST nodes and produces values.

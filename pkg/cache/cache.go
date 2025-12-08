@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/0xsj/numio/internal/types"
+	"github.com/0xsj/numio/pkg/types"
 )
 
 // Default cache settings
