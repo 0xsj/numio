@@ -8,7 +8,7 @@ import (
 	"unicode"
 
 	"github.com/0xsj/numio/internal/token"
-	"github.com/0xsj/numio/internal/types"
+	"github.com/0xsj/numio/pkg/types"
 )
 
 // Lexer tokenizes input strings.
