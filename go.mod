@@ -1,7 +1,3 @@
-module github.com/0xsj/fn-analyzer
+module github.com/0xsj/numio
 
-go 1.24.3
-
-require github.com/go-sql-driver/mysql v1.9.2
-
-require filippo.io/edwards25519 v1.1.0 // indirect
+go 1.25.5
