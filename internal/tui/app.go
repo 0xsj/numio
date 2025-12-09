@@ -3,385 +3,584 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
-	"time"
 
-	"github.com/0xsj/numio/pkg/cache"
 	"github.com/0xsj/numio/pkg/engine"
-	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
 
-// App is the main bubbletea model.
+// Styles
+var (
+	lineNumStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#666"))
+	commentStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#666")).Italic(true)
+	resultStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("#7ee787"))
+	errorStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("#f85149"))
+	cursorStyle  = lipgloss.NewStyle().Reverse(true)
+	tildeStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("#444"))
+
+	// Help styles
+	helpBorderStyle = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("#79c0ff")).
+			Padding(1, 2)
+	helpTitleStyle   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#79c0ff"))
+	helpSectionStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#ffa657")).MarginTop(1)
+	helpKeyStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("#79c0ff")).Width(14)
+	helpDescStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("#888"))
+	helpFooterStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("#666")).Italic(true).MarginTop(1)
+)
+
+// App is the main model
 type App struct {
-	// Components
-	editor    *Editor
-	results   *Results
-	statusBar *StatusBar
-	helpView  *HelpView
-
-	// State
-	styles      Styles
-	keymap      KeyMap
-	engine      *engine.Engine
-	rateCache   *cache.RateCache
-	showHelp    bool
-	showHeader  bool
-	wrapLines   bool
-	debug       bool
-	filename    string
-	lastResults []ResultLine
-
-	// Dimensions
-	width  int
-	height int
-
-	// Messages
-	statusMessage string
-	statusTime    time.Time
+	lines    []string
+	row      int
+	col      int
+	mode     Mode
+	width    int
+	height   int
+	engine   *engine.Engine
+	showHelp bool
 }
 
-// NewApp creates a new App instance.
+// NewApp creates a new app
 func NewApp() *App {
-	styles := DefaultStyles()
-	keymap := DefaultKeyMap()
-	rc := cache.New()
-	eng := engine.NewWithCache(rc)
-
-	helpView := NewHelpView(styles, keymap)
-
 	return &App{
-		editor:      NewEditor(styles, keymap),
-		results:     NewResults(styles, eng),
-		statusBar:   NewStatusBar(styles, helpView),
-		helpView:    helpView,
-		styles:      styles,
-		keymap:      keymap,
-		engine:      eng,
-		rateCache:   rc,
-		showHelp:    false,
-		showHeader:  true,
-		wrapLines:   false,
-		debug:       false,
-		filename:    "",
-		lastResults: nil,
-		width:       80,
-		height:      24,
+		lines:    []string{""},
+		row:      0,
+		col:      0,
+		mode:     ModeInsert,
+		width:    80,
+		height:   24,
+		engine:   engine.New(),
+		showHelp: false,
 	}
 }
 
-// WithFile sets the initial file to load.
-func (a *App) WithFile(filename string) *App {
-	a.filename = filename
-	return a
-}
-
-// WithContent sets the initial content.
-func (a *App) WithContent(content string) *App {
-	a.editor.SetContent(content)
-	return a
-}
-
-// ════════════════════════════════════════════════════════════════
-// BUBBLETEA INTERFACE
-// ════════════════════════════════════════════════════════════════
-
-// Init implements tea.Model.
+// Init implements tea.Model
 func (a *App) Init() tea.Cmd {
-	// Initial evaluation
-	a.evaluate()
 	return nil
 }
 
-// Update implements tea.Model.
+// Update implements tea.Model
 func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		return a.handleKey(msg)
-
 	case tea.WindowSizeMsg:
-		a.handleResize(msg.Width, msg.Height)
-		return a, nil
+		a.width = msg.Width
+		a.height = msg.Height
 
-	case statusClearMsg:
-		a.statusMessage = ""
-		return a, nil
+	case tea.KeyMsg:
+		// Help toggle - works in any mode
+		if msg.String() == "?" && a.mode == ModeNormal {
+			a.showHelp = !a.showHelp
+			return a, nil
+		}
+		if msg.String() == "f1" {
+			a.showHelp = !a.showHelp
+			return a, nil
+		}
+
+		// Close help with Esc or q
+		if a.showHelp {
+			if msg.String() == "esc" || msg.String() == "q" || msg.String() == "?" {
+				a.showHelp = false
+			}
+			return a, nil
+		}
+
+		switch msg.String() {
+		case "ctrl+c", "ctrl+q":
+			return a, tea.Quit
+
+		case "esc":
+			if a.mode == ModeInsert {
+				a.mode = ModeNormal
+				if a.col > 0 {
+					a.col--
+				}
+			}
+
+		case "i":
+			if a.mode == ModeNormal {
+				a.mode = ModeInsert
+			} else {
+				a.insertChar('i')
+			}
+
+		case "a":
+			if a.mode == ModeNormal {
+				a.mode = ModeInsert
+				if a.col < len(a.lines[a.row]) {
+					a.col++
+				}
+			} else {
+				a.insertChar('a')
+			}
+
+		case "o":
+			if a.mode == ModeNormal {
+				a.newLineBelow()
+				a.mode = ModeInsert
+			} else {
+				a.insertChar('o')
+			}
+
+		case "O":
+			if a.mode == ModeNormal {
+				a.newLineAbove()
+				a.mode = ModeInsert
+			} else {
+				a.insertChar('O')
+			}
+
+		case "q":
+			if a.mode == ModeNormal {
+				return a, tea.Quit
+			} else {
+				a.insertChar('q')
+			}
+
+		case "enter":
+			if a.mode == ModeInsert {
+				a.newLine()
+			}
+
+		case "backspace":
+			if a.mode == ModeInsert {
+				a.backspace()
+			}
+
+		case "delete":
+			if a.mode == ModeInsert {
+				a.deleteChar()
+			}
+
+		case "up", "k":
+			if a.mode == ModeNormal || msg.String() == "up" {
+				if a.row > 0 {
+					a.row--
+					a.clampCol()
+				}
+			} else {
+				a.insertChar('k')
+			}
+
+		case "down", "j":
+			if a.mode == ModeNormal || msg.String() == "down" {
+				if a.row < len(a.lines)-1 {
+					a.row++
+					a.clampCol()
+				}
+			} else {
+				a.insertChar('j')
+			}
+
+		case "left", "h":
+			if a.mode == ModeNormal || msg.String() == "left" {
+				if a.col > 0 {
+					a.col--
+				}
+			} else {
+				a.insertChar('h')
+			}
+
+		case "right", "l":
+			if a.mode == ModeNormal || msg.String() == "right" {
+				if a.col < len(a.lines[a.row]) {
+					a.col++
+				}
+			} else {
+				a.insertChar('l')
+			}
+
+		case "home", "0":
+			if a.mode == ModeNormal || msg.String() == "home" {
+				a.col = 0
+			} else {
+				a.insertChar('0')
+			}
+
+		case "end", "$":
+			if a.mode == ModeNormal || msg.String() == "end" {
+				a.col = len(a.lines[a.row])
+			} else {
+				a.insertChar('$')
+			}
+
+		case "G":
+			if a.mode == ModeNormal {
+				a.row = len(a.lines) - 1
+				a.clampCol()
+			} else {
+				a.insertChar('G')
+			}
+
+		case "g":
+			if a.mode == ModeNormal {
+				a.row = 0
+				a.col = 0
+			} else {
+				a.insertChar('g')
+			}
+
+		case "x":
+			if a.mode == ModeNormal {
+				a.deleteChar()
+			} else {
+				a.insertChar('x')
+			}
+
+		case "d":
+			if a.mode == ModeNormal {
+				a.deleteLine()
+			} else {
+				a.insertChar('d')
+			}
+
+		default:
+			if a.mode == ModeInsert && len(msg.Runes) > 0 {
+				for _, r := range msg.Runes {
+					a.insertChar(r)
+				}
+			}
+		}
 	}
 
 	return a, nil
 }
 
-// View implements tea.Model.
+func (a *App) insertChar(r rune) {
+	line := a.lines[a.row]
+	if a.col > len(line) {
+		a.col = len(line)
+	}
+	a.lines[a.row] = line[:a.col] + string(r) + line[a.col:]
+	a.col++
+}
+
+func (a *App) newLine() {
+	line := a.lines[a.row]
+	if a.col > len(line) {
+		a.col = len(line)
+	}
+	before := line[:a.col]
+	after := line[a.col:]
+	a.lines[a.row] = before
+
+	newLines := make([]string, 0, len(a.lines)+1)
+	newLines = append(newLines, a.lines[:a.row+1]...)
+	newLines = append(newLines, after)
+	if a.row+1 < len(a.lines) {
+		newLines = append(newLines, a.lines[a.row+1:]...)
+	}
+	a.lines = newLines
+
+	a.row++
+	a.col = 0
+}
+
+func (a *App) newLineBelow() {
+	newLines := make([]string, 0, len(a.lines)+1)
+	newLines = append(newLines, a.lines[:a.row+1]...)
+	newLines = append(newLines, "")
+	if a.row+1 < len(a.lines) {
+		newLines = append(newLines, a.lines[a.row+1:]...)
+	}
+	a.lines = newLines
+	a.row++
+	a.col = 0
+}
+
+func (a *App) newLineAbove() {
+	newLines := make([]string, 0, len(a.lines)+1)
+	newLines = append(newLines, a.lines[:a.row]...)
+	newLines = append(newLines, "")
+	newLines = append(newLines, a.lines[a.row:]...)
+	a.lines = newLines
+	a.col = 0
+}
+
+func (a *App) backspace() {
+	if a.col > 0 {
+		line := a.lines[a.row]
+		a.lines[a.row] = line[:a.col-1] + line[a.col:]
+		a.col--
+	} else if a.row > 0 {
+		prevLen := len(a.lines[a.row-1])
+		a.lines[a.row-1] += a.lines[a.row]
+		a.lines = append(a.lines[:a.row], a.lines[a.row+1:]...)
+		a.row--
+		a.col = prevLen
+	}
+}
+
+func (a *App) deleteChar() {
+	line := a.lines[a.row]
+	if a.col < len(line) {
+		a.lines[a.row] = line[:a.col] + line[a.col+1:]
+	} else if a.row < len(a.lines)-1 {
+		a.lines[a.row] = line + a.lines[a.row+1]
+		a.lines = append(a.lines[:a.row+1], a.lines[a.row+2:]...)
+	}
+}
+
+func (a *App) deleteLine() {
+	if len(a.lines) == 1 {
+		a.lines[0] = ""
+		a.col = 0
+	} else {
+		a.lines = append(a.lines[:a.row], a.lines[a.row+1:]...)
+		if a.row >= len(a.lines) {
+			a.row = len(a.lines) - 1
+		}
+		a.clampCol()
+	}
+}
+
+func (a *App) clampCol() {
+	if a.col > len(a.lines[a.row]) {
+		a.col = len(a.lines[a.row])
+	}
+}
+
+// View implements tea.Model
 func (a *App) View() string {
 	if a.width == 0 || a.height == 0 {
 		return "Loading..."
 	}
 
-	var content string
-
-	// Main content (editor + results)
-	mainContent := a.renderMain()
-
-	// Status bar
-	statusBar := a.renderStatusBar()
-
-	// Combine
-	content = mainContent + "\n" + statusBar
-
-	// Help overlay (if shown)
+	// Show help overlay
 	if a.showHelp {
-		content = a.renderWithHelp(content)
+		return a.renderHelp()
 	}
 
-	return content
-}
+	var b strings.Builder
 
-// ════════════════════════════════════════════════════════════════
-// KEY HANDLING
-// ════════════════════════════════════════════════════════════════
-
-func (a *App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	// Check for quit
-	if a.keymap.IsQuit(msg, a.editor.Mode()) {
-		return a, tea.Quit
+	contentHeight := a.height - 2
+	if contentHeight < 1 {
+		contentHeight = 20
 	}
 
-	// Help toggle (works in all modes)
-	if key.Matches(msg, a.keymap.Help) {
-		a.showHelp = !a.showHelp
-		return a, nil
+	lineNumWidth := 5
+	resultWidth := 20
+	editorWidth := a.width - lineNumWidth - resultWidth - 4
+
+	if editorWidth < 20 {
+		editorWidth = 20
 	}
 
-	// Close help with Escape if open
-	if a.showHelp && msg.String() == "esc" {
-		a.showHelp = false
-		return a, nil
-	}
+	a.engine.Clear()
 
-	// If help is shown, don't process other keys
-	if a.showHelp {
-		return a, nil
-	}
-
-	// Global keys (work in normal mode)
-	if a.editor.Mode() == ModeNormal {
-		switch {
-		case key.Matches(msg, a.keymap.Save):
-			return a, a.save()
-
-		case key.Matches(msg, a.keymap.Refresh):
-			return a, a.refreshRates()
-
-		case key.Matches(msg, a.keymap.ToggleWrap):
-			a.wrapLines = !a.wrapLines
-			a.setStatus("Wrap: " + boolToOnOff(a.wrapLines))
-			return a, nil
-
-		case key.Matches(msg, a.keymap.ToggleLines):
-			a.editor.ToggleLineNumbers()
-			a.setStatus("Line numbers toggled")
-			return a, nil
-
-		case key.Matches(msg, a.keymap.ToggleHeader):
-			a.showHeader = !a.showHeader
-			a.handleResize(a.width, a.height)
-			return a, nil
-
-		case key.Matches(msg, a.keymap.ToggleDebug):
-			a.debug = !a.debug
-			a.setStatus("Debug: " + boolToOnOff(a.debug))
-			return a, nil
+	for i := 0; i < contentHeight; i++ {
+		if i < len(a.lines) {
+			b.WriteString(lineNumStyle.Render(fmt.Sprintf("%3d ", i+1)))
+		} else {
+			b.WriteString(lineNumStyle.Render("    "))
 		}
+
+		b.WriteString("│")
+
+		var editorContent string
+		var resultContent string
+
+		if i < len(a.lines) {
+			line := a.lines[i]
+
+			if i == a.row {
+				editorContent = a.renderLineWithCursor(line)
+			} else {
+				editorContent = a.highlightLine(line)
+			}
+
+			resultContent = a.evaluateLine(line)
+		} else {
+			editorContent = tildeStyle.Render("~")
+			resultContent = ""
+		}
+
+		editorLen := lipgloss.Width(editorContent)
+		if editorLen < editorWidth {
+			editorContent += strings.Repeat(" ", editorWidth-editorLen)
+		} else if editorLen > editorWidth {
+			editorContent = editorContent[:editorWidth]
+		}
+
+		resultContent = fmt.Sprintf("%*s", resultWidth, resultContent)
+
+		b.WriteString(editorContent)
+		b.WriteString("│")
+		b.WriteString(resultContent)
+		b.WriteString("\n")
 	}
 
-	// Pass to editor
-	cmd := a.editor.Update(msg)
+	b.WriteString(a.renderStatusBar())
 
-	// Re-evaluate after any edit
-	a.evaluate()
-
-	return a, cmd
+	return b.String()
 }
 
-// ════════════════════════════════════════════════════════════════
-// RENDERING
-// ════════════════════════════════════════════════════════════════
+func (a *App) renderHelp() string {
+	var content strings.Builder
 
-func (a *App) renderMain() string {
-	// Calculate pane widths
-	editorWidth := a.width * 2 / 3
-	resultWidth := a.width - editorWidth - 1
+	// Title
+	content.WriteString(helpTitleStyle.Render("Help"))
+	content.WriteString("\n\n")
 
-	// Calculate height (minus status bar)
-	contentHeight := a.height - 1
-	if a.showHeader {
-		contentHeight -= 2
-	}
+	// Navigation section
+	content.WriteString(helpSectionStyle.Render("Navigation"))
+	content.WriteString("\n")
+	content.WriteString(helpKeyStyle.Render("↑/k") + helpDescStyle.Render("Move up") + "\n")
+	content.WriteString(helpKeyStyle.Render("↓/j") + helpDescStyle.Render("Move down") + "\n")
+	content.WriteString(helpKeyStyle.Render("←/h") + helpDescStyle.Render("Move left") + "\n")
+	content.WriteString(helpKeyStyle.Render("→/l") + helpDescStyle.Render("Move right") + "\n")
+	content.WriteString(helpKeyStyle.Render("0 / Home") + helpDescStyle.Render("Start of line") + "\n")
+	content.WriteString(helpKeyStyle.Render("$ / End") + helpDescStyle.Render("End of line") + "\n")
+	content.WriteString(helpKeyStyle.Render("g") + helpDescStyle.Render("Go to first line") + "\n")
+	content.WriteString(helpKeyStyle.Render("G") + helpDescStyle.Render("Go to last line") + "\n")
 
-	// Update component sizes
-	a.editor.SetSize(editorWidth, contentHeight)
-	a.results.SetSize(resultWidth, contentHeight)
-	a.results.SetScrollY(a.editor.scrollY)
+	// Editing section
+	content.WriteString(helpSectionStyle.Render("Editing"))
+	content.WriteString("\n")
+	content.WriteString(helpKeyStyle.Render("i") + helpDescStyle.Render("Insert mode") + "\n")
+	content.WriteString(helpKeyStyle.Render("a") + helpDescStyle.Render("Append (insert after)") + "\n")
+	content.WriteString(helpKeyStyle.Render("o") + helpDescStyle.Render("New line below") + "\n")
+	content.WriteString(helpKeyStyle.Render("O") + helpDescStyle.Render("New line above") + "\n")
+	content.WriteString(helpKeyStyle.Render("x") + helpDescStyle.Render("Delete character") + "\n")
+	content.WriteString(helpKeyStyle.Render("d") + helpDescStyle.Render("Delete line") + "\n")
+	content.WriteString(helpKeyStyle.Render("Esc") + helpDescStyle.Render("Normal mode") + "\n")
 
-	// Render editor
-	editorContent := a.editor.Render()
-	editorPane := lipgloss.NewStyle().
-		Width(editorWidth).
-		Height(contentHeight).
-		Render(editorContent)
+	// General section
+	content.WriteString(helpSectionStyle.Render("General"))
+	content.WriteString("\n")
+	content.WriteString(helpKeyStyle.Render("?") + helpDescStyle.Render("Toggle help") + "\n")
+	content.WriteString(helpKeyStyle.Render("F1") + helpDescStyle.Render("Toggle help") + "\n")
+	content.WriteString(helpKeyStyle.Render("q") + helpDescStyle.Render("Quit (normal mode)") + "\n")
+	content.WriteString(helpKeyStyle.Render("Ctrl+C") + helpDescStyle.Render("Force quit") + "\n")
 
-	// Render results
-	resultsContent := a.results.Render(a.lastResults)
-	resultsPane := lipgloss.NewStyle().
-		Width(resultWidth).
-		Height(contentHeight).
-		Render(resultsContent)
+	// Expressions section
+	content.WriteString(helpSectionStyle.Render("Expressions"))
+	content.WriteString("\n")
+	content.WriteString(helpDescStyle.Render("100 + 50        → 150") + "\n")
+	content.WriteString(helpDescStyle.Render("20% of 150      → 30") + "\n")
+	content.WriteString(helpDescStyle.Render("$100 + 15%      → $115.00") + "\n")
+	content.WriteString(helpDescStyle.Render("price = 100     → 100") + "\n")
+	content.WriteString(helpDescStyle.Render("price * 2       → 200") + "\n")
 
-	// Join horizontally
-	main := lipgloss.JoinHorizontal(lipgloss.Top, editorPane, resultsPane)
+	// Footer
+	content.WriteString(helpFooterStyle.Render("\nPress ? or Esc to close"))
 
-	// Add header if shown
-	if a.showHeader {
-		header := a.renderHeader()
-		main = header + "\n" + main
-	}
+	// Wrap in border and center
+	helpBox := helpBorderStyle.Render(content.String())
 
-	return main
+	return lipgloss.Place(a.width, a.height,
+		lipgloss.Center, lipgloss.Center,
+		helpBox)
 }
 
-func (a *App) renderHeader() string {
-	title := "numio"
-	if a.filename != "" {
-		title += " - " + a.filename
-	}
-	if a.editor.Modified() {
-		title += " [+]"
+func (a *App) renderLineWithCursor(line string) string {
+	col := a.col
+	if col > len(line) {
+		col = len(line)
 	}
 
-	titleStyle := lipgloss.NewStyle().
-		Foreground(ColorNumber).
-		Bold(true)
+	if col == len(line) {
+		return a.highlightLine(line) + cursorStyle.Render(" ")
+	}
 
-	separator := strings.Repeat("─", a.width)
-	sepStyle := lipgloss.NewStyle().Foreground(ColorBorder)
+	before := line[:col]
+	cursorChar := string(line[col])
+	after := line[col+1:]
 
-	return titleStyle.Render(title) + "\n" + sepStyle.Render(separator)
+	return a.highlightLine(before) + cursorStyle.Render(cursorChar) + a.highlightLine(after)
+}
+
+func (a *App) highlightLine(line string) string {
+	trimmed := strings.TrimSpace(line)
+
+	if strings.HasPrefix(trimmed, "#") || strings.HasPrefix(trimmed, "//") {
+		return commentStyle.Render(line)
+	}
+
+	return line
+}
+
+func (a *App) evaluateLine(line string) string {
+	trimmed := strings.TrimSpace(line)
+
+	if trimmed == "" {
+		return ""
+	}
+
+	if strings.HasPrefix(trimmed, "#") || strings.HasPrefix(trimmed, "//") {
+		return ""
+	}
+
+	result := a.engine.Eval(line)
+
+	if result.IsEmpty() {
+		return ""
+	}
+
+	if result.IsError() {
+		return errorStyle.Render("err")
+	}
+
+	return resultStyle.Render(result.String())
 }
 
 func (a *App) renderStatusBar() string {
-	info := StatusInfo{
-		Mode:         a.editor.Mode(),
-		Filename:     a.filename,
-		Modified:     a.editor.Modified(),
-		Line:         a.editor.CursorPos().Line + 1,
-		Col:          a.editor.CursorPos().Col + 1,
-		TotalLines:   a.editor.LineCount(),
-		Total:        a.results.RenderTotal(),
-		ShowRatesAge: true,
-		RatesAge:     a.rateCache.Age(),
+	var modeStyle lipgloss.Style
+	if a.mode == ModeInsert {
+		modeStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("#000")).
+			Background(lipgloss.Color("#7ee787")).
+			Padding(0, 1)
+	} else {
+		modeStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("#000")).
+			Background(lipgloss.Color("#79c0ff")).
+			Padding(0, 1)
 	}
 
-	// Override with status message if recent
-	if a.statusMessage != "" && time.Since(a.statusTime) < 3*time.Second {
-		// Show status message instead of normal status
+	mode := modeStyle.Render(a.mode.String())
+
+	hint := lipgloss.NewStyle().Foreground(lipgloss.Color("#666")).Render("  ? help  ^s save  ^r rates")
+
+	pos := fmt.Sprintf("%d:%d", a.row+1, a.col+1)
+
+	total := a.engine.Total()
+	totalStr := ""
+	if !total.IsEmpty() && total.AsFloat() != 0 {
+		totalStr = resultStyle.Render(fmt.Sprintf("total: %s", total.String())) + "  "
 	}
 
-	a.statusBar.SetWidth(a.width)
-	return a.statusBar.Render(info)
-}
+	left := mode + hint
+	right := totalStr + pos
 
-func (a *App) renderWithHelp(content string) string {
-	// Render help overlay centered
-	a.helpView.SetSize(a.width, a.height)
-	helpOverlay := a.helpView.RenderCentered(a.width, a.height)
-
-	// For simplicity, just return the help overlay
-	// A full implementation would composite them
-	return helpOverlay
-}
-
-// ════════════════════════════════════════════════════════════════
-// ACTIONS
-// ════════════════════════════════════════════════════════════════
-
-func (a *App) evaluate() {
-	lines := a.editor.Lines()
-	a.lastResults = a.results.Evaluate(lines)
-}
-
-func (a *App) save() tea.Cmd {
-	if a.filename == "" {
-		a.setStatus("No filename set")
-		return nil
+	spaces := a.width - lipgloss.Width(left) - lipgloss.Width(right)
+	if spaces < 0 {
+		spaces = 1
 	}
 
-	// In a real implementation, save to file
-	a.setStatus("Saved: " + a.filename)
-	return a.clearStatusAfter(3 * time.Second)
+	statusBg := lipgloss.NewStyle().Background(lipgloss.Color("#1a1a2e"))
+	return statusBg.Render(left + strings.Repeat(" ", spaces) + right)
 }
 
-func (a *App) refreshRates() tea.Cmd {
-	// In a real implementation, fetch from API
-	a.setStatus("Rates refreshed")
-	return a.clearStatusAfter(3 * time.Second)
-}
-
-func (a *App) setStatus(msg string) {
-	a.statusMessage = msg
-	a.statusTime = time.Now()
-}
-
-func (a *App) clearStatusAfter(d time.Duration) tea.Cmd {
-	return tea.Tick(d, func(time.Time) tea.Msg {
-		return statusClearMsg{}
-	})
-}
-
-// ════════════════════════════════════════════════════════════════
-// RESIZE
-// ════════════════════════════════════════════════════════════════
-
-func (a *App) handleResize(width, height int) {
-	a.width = width
-	a.height = height
-
-	// Update styles with new dimensions
-	a.styles = a.styles.WithDimensions(width, height)
-}
-
-// ════════════════════════════════════════════════════════════════
-// MESSAGES
-// ════════════════════════════════════════════════════════════════
-
-type statusClearMsg struct{}
-
-// ════════════════════════════════════════════════════════════════
-// HELPERS
-// ════════════════════════════════════════════════════════════════
-
-func boolToOnOff(b bool) string {
-	if b {
-		return "ON"
-	}
-	return "OFF"
-}
-
-// ════════════════════════════════════════════════════════════════
-// RUN
-// ════════════════════════════════════════════════════════════════
-
-// Run starts the TUI application.
+// Run starts the TUI
 func Run() error {
-	app := NewApp()
-	p := tea.NewProgram(app, tea.WithAltScreen())
+	p := tea.NewProgram(NewApp(), tea.WithAltScreen())
 	_, err := p.Run()
 	return err
 }
 
-// RunWithFile starts the TUI with a file loaded.
-func RunWithFile(filename string, content string) error {
-	app := NewApp().WithFile(filename).WithContent(content)
+// RunWithFile starts with file content
+func RunWithFile(filename, content string) error {
+	app := NewApp()
+	if content != "" {
+		app.lines = strings.Split(content, "\n")
+	}
 	p := tea.NewProgram(app, tea.WithAltScreen())
 	_, err := p.Run()
 	return err
