@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/0xsj/numio/internal/tui/keymap"
 	"github.com/0xsj/numio/pkg/engine"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -19,12 +20,10 @@ var (
 	errorStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("#f85149"))
 	cursorStyle  = lipgloss.NewStyle().Reverse(true)
 	tildeStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("#444"))
+	pendingStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#ffa657"))
 
 	// Help styles
-	helpBorderStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("#79c0ff")).
-			Padding(1, 2)
+	helpBorderStyle  = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#79c0ff")).Padding(1, 2)
 	helpTitleStyle   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#79c0ff"))
 	helpSectionStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#ffa657")).MarginTop(1)
 	helpKeyStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("#79c0ff")).Width(14)
@@ -34,27 +33,49 @@ var (
 
 // App is the main model
 type App struct {
-	lines    []string
-	row      int
-	col      int
-	mode     Mode
-	width    int
-	height   int
-	engine   *engine.Engine
+	lines  []string
+	row    int
+	col    int
+	width  int
+	height int
+	engine *engine.Engine
+
+	// Keymap
+	keymap   *keymap.KeyMap
 	showHelp bool
+
+	// Yank buffer
+	yankBuffer string
+
+	// Undo/Redo
+	undoStack []editorState
+	redoStack []editorState
+}
+
+// editorState for undo/redo
+type editorState struct {
+	lines []string
+	row   int
+	col   int
 }
 
 // NewApp creates a new app
 func NewApp() *App {
+	// Load keymap (with user config if exists)
+	km, _ := keymap.LoadOrCreate(keymap.DefaultConfigPath())
+
 	return &App{
-		lines:    []string{""},
-		row:      0,
-		col:      0,
-		mode:     ModeInsert,
-		width:    80,
-		height:   24,
-		engine:   engine.New(),
-		showHelp: false,
+		lines:      []string{""},
+		row:        0,
+		col:        0,
+		width:      80,
+		height:     24,
+		engine:     engine.New(),
+		keymap:     km,
+		showHelp:   false,
+		yankBuffer: "",
+		undoStack:  nil,
+		redoStack:  nil,
 	}
 }
 
@@ -71,184 +92,372 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.height = msg.Height
 
 	case tea.KeyMsg:
-		// Help toggle - works in any mode
-		if msg.String() == "?" && a.mode == ModeNormal {
-			a.showHelp = !a.showHelp
-			return a, nil
-		}
-		if msg.String() == "f1" {
-			a.showHelp = !a.showHelp
-			return a, nil
-		}
+		return a.handleKey(msg)
+	}
 
-		// Close help with Esc or q
-		if a.showHelp {
-			if msg.String() == "esc" || msg.String() == "q" || msg.String() == "?" {
-				a.showHelp = false
-			}
-			return a, nil
-		}
+	return a, nil
+}
 
-		switch msg.String() {
-		case "ctrl+c", "ctrl+q":
-			return a, tea.Quit
+func (a *App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	key := msg.String()
 
-		case "esc":
-			if a.mode == ModeInsert {
-				a.mode = ModeNormal
-				if a.col > 0 {
-					a.col--
-				}
-			}
+	// Always handle Ctrl+C as force quit
+	if key == "ctrl+c" {
+		return a, tea.Quit
+	}
 
-		case "i":
-			if a.mode == ModeNormal {
-				a.mode = ModeInsert
-			} else {
-				a.insertChar('i')
-			}
+	// In insert mode, handle text input specially
+	if a.keymap.CurrentMode == keymap.ModeInsert {
+		return a.handleInsertKey(msg)
+	}
 
-		case "a":
-			if a.mode == ModeNormal {
-				a.mode = ModeInsert
-				if a.col < len(a.lines[a.row]) {
-					a.col++
-				}
-			} else {
-				a.insertChar('a')
-			}
+	// Close help with any key
+	if a.showHelp {
+		a.showHelp = false
+		return a, nil
+	}
 
-		case "o":
-			if a.mode == ModeNormal {
-				a.newLineBelow()
-				a.mode = ModeInsert
-			} else {
-				a.insertChar('o')
-			}
+	// Process key through keymap
+	cmd, ok := a.keymap.ProcessKey(key)
+	if !ok {
+		// No command yet (could be pending sequence or count)
+		return a, nil
+	}
 
-		case "O":
-			if a.mode == ModeNormal {
-				a.newLineAbove()
-				a.mode = ModeInsert
-			} else {
-				a.insertChar('O')
-			}
+	// Execute the command
+	return a.executeCommand(cmd)
+}
 
-		case "q":
-			if a.mode == ModeNormal {
-				return a, tea.Quit
-			} else {
-				a.insertChar('q')
-			}
+func (a *App) handleInsertKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	key := msg.String()
 
-		case "enter":
-			if a.mode == ModeInsert {
-				a.newLine()
-			}
+	// Check for bound keys in insert mode
+	result := a.keymap.Insert.Lookup(key)
+	if result.Status == keymap.LookupFound {
+		cmd := keymap.NewCommand(result.Action, 1)
+		return a.executeCommand(cmd)
+	}
 
-		case "backspace":
-			if a.mode == ModeInsert {
-				a.backspace()
-			}
-
-		case "delete":
-			if a.mode == ModeInsert {
-				a.deleteChar()
-			}
-
-		case "up", "k":
-			if a.mode == ModeNormal || msg.String() == "up" {
-				if a.row > 0 {
-					a.row--
-					a.clampCol()
-				}
-			} else {
-				a.insertChar('k')
-			}
-
-		case "down", "j":
-			if a.mode == ModeNormal || msg.String() == "down" {
-				if a.row < len(a.lines)-1 {
-					a.row++
-					a.clampCol()
-				}
-			} else {
-				a.insertChar('j')
-			}
-
-		case "left", "h":
-			if a.mode == ModeNormal || msg.String() == "left" {
-				if a.col > 0 {
-					a.col--
-				}
-			} else {
-				a.insertChar('h')
-			}
-
-		case "right", "l":
-			if a.mode == ModeNormal || msg.String() == "right" {
-				if a.col < len(a.lines[a.row]) {
-					a.col++
-				}
-			} else {
-				a.insertChar('l')
-			}
-
-		case "home", "0":
-			if a.mode == ModeNormal || msg.String() == "home" {
-				a.col = 0
-			} else {
-				a.insertChar('0')
-			}
-
-		case "end", "$":
-			if a.mode == ModeNormal || msg.String() == "end" {
-				a.col = len(a.lines[a.row])
-			} else {
-				a.insertChar('$')
-			}
-
-		case "G":
-			if a.mode == ModeNormal {
-				a.row = len(a.lines) - 1
-				a.clampCol()
-			} else {
-				a.insertChar('G')
-			}
-
-		case "g":
-			if a.mode == ModeNormal {
-				a.row = 0
-				a.col = 0
-			} else {
-				a.insertChar('g')
-			}
-
-		case "x":
-			if a.mode == ModeNormal {
-				a.deleteChar()
-			} else {
-				a.insertChar('x')
-			}
-
-		case "d":
-			if a.mode == ModeNormal {
-				a.deleteLine()
-			} else {
-				a.insertChar('d')
-			}
-
-		default:
-			if a.mode == ModeInsert && len(msg.Runes) > 0 {
-				for _, r := range msg.Runes {
-					a.insertChar(r)
-				}
-			}
+	// Handle regular character input
+	if len(msg.Runes) > 0 {
+		a.saveUndo()
+		for _, r := range msg.Runes {
+			a.insertChar(r)
 		}
 	}
 
 	return a, nil
 }
+
+func (a *App) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
+	count := cmd.TotalCount()
+
+	switch cmd.Action {
+	// Mode switching
+	case keymap.ActionNormalMode:
+		a.keymap.SetMode(keymap.ModeNormal)
+		if a.col > 0 {
+			a.col--
+		}
+
+	case keymap.ActionInsertMode:
+		a.keymap.SetMode(keymap.ModeInsert)
+
+	case keymap.ActionAppendMode:
+		a.keymap.SetMode(keymap.ModeInsert)
+		if a.col < len(a.lines[a.row]) {
+			a.col++
+		}
+
+	case keymap.ActionVisualMode:
+		a.keymap.SetMode(keymap.ModeVisual)
+
+	// Cursor movement
+	case keymap.ActionMoveUp:
+		for i := 0; i < count; i++ {
+			a.cursorUp()
+		}
+
+	case keymap.ActionMoveDown:
+		for i := 0; i < count; i++ {
+			a.cursorDown()
+		}
+
+	case keymap.ActionMoveLeft:
+		for i := 0; i < count; i++ {
+			a.cursorLeft()
+		}
+
+	case keymap.ActionMoveRight:
+		for i := 0; i < count; i++ {
+			a.cursorRight()
+		}
+
+	case keymap.ActionMoveWordNext:
+		for i := 0; i < count; i++ {
+			a.wordNext()
+		}
+
+	case keymap.ActionMoveWordPrev:
+		for i := 0; i < count; i++ {
+			a.wordPrev()
+		}
+
+	case keymap.ActionGotoLineStart:
+		a.col = 0
+
+	case keymap.ActionGotoLineEnd:
+		a.col = len(a.lines[a.row])
+
+	case keymap.ActionGotoTop:
+		a.row = 0
+		a.col = 0
+
+	case keymap.ActionGotoBottom:
+		a.row = len(a.lines) - 1
+		a.clampCol()
+
+	case keymap.ActionPageUp:
+		pageSize := a.height - 4
+		if pageSize < 1 {
+			pageSize = 1
+		}
+		for i := 0; i < pageSize*count; i++ {
+			a.cursorUp()
+		}
+
+	case keymap.ActionPageDown:
+		pageSize := a.height - 4
+		if pageSize < 1 {
+			pageSize = 1
+		}
+		for i := 0; i < pageSize*count; i++ {
+			a.cursorDown()
+		}
+
+	// Editing
+	case keymap.ActionDeleteChar:
+		a.saveUndo()
+		for i := 0; i < count; i++ {
+			a.deleteChar()
+		}
+
+	case keymap.ActionDeleteCharBack:
+		a.saveUndo()
+		for i := 0; i < count; i++ {
+			a.backspace()
+		}
+
+	case keymap.ActionDeleteLine:
+		a.saveUndo()
+		for i := 0; i < count; i++ {
+			a.deleteLine()
+		}
+
+	case keymap.ActionDeleteToEnd:
+		a.saveUndo()
+		a.deleteToEnd()
+
+	case keymap.ActionYankLine:
+		a.yankLine()
+
+	case keymap.ActionPaste:
+		a.saveUndo()
+		a.paste()
+
+	case keymap.ActionPasteAbove:
+		a.saveUndo()
+		a.pasteAbove()
+
+	case keymap.ActionUndo:
+		a.undo()
+
+	case keymap.ActionRedo:
+		a.redo()
+
+	case keymap.ActionJoinLines:
+		a.saveUndo()
+		a.joinLines()
+
+	case keymap.ActionOpenBelow:
+		a.saveUndo()
+		a.newLineBelow()
+		a.keymap.SetMode(keymap.ModeInsert)
+
+	case keymap.ActionOpenAbove:
+		a.saveUndo()
+		a.newLineAbove()
+		a.keymap.SetMode(keymap.ModeInsert)
+
+	// Insert mode actions
+	case keymap.ActionBackspace:
+		a.saveUndo()
+		a.backspace()
+
+	case keymap.ActionDelete:
+		a.saveUndo()
+		a.deleteChar()
+
+	case keymap.ActionInsertNewline:
+		a.saveUndo()
+		a.newLine()
+
+	case keymap.ActionInsertTab:
+		a.saveUndo()
+		a.insertChar(' ')
+		a.insertChar(' ')
+
+	// Operators with motions
+	case keymap.ActionOperatorDelete:
+		if cmd.Motion != keymap.ActionNone {
+			a.saveUndo()
+			a.deleteWithMotion(cmd.Motion, count)
+		}
+
+	case keymap.ActionOperatorYank:
+		if cmd.Motion != keymap.ActionNone {
+			a.yankWithMotion(cmd.Motion, count)
+		}
+
+	case keymap.ActionOperatorChange:
+		if cmd.Motion != keymap.ActionNone {
+			a.saveUndo()
+			a.deleteWithMotion(cmd.Motion, count)
+			a.keymap.SetMode(keymap.ModeInsert)
+		}
+
+	// General
+	case keymap.ActionQuit:
+		return a, tea.Quit
+
+	case keymap.ActionForceQuit:
+		return a, tea.Quit
+
+	case keymap.ActionSave:
+		// TODO: Implement save
+		
+	case keymap.ActionSaveQuit:
+		// TODO: Implement save
+		return a, tea.Quit
+
+	case keymap.ActionToggleHelp:
+		a.showHelp = !a.showHelp
+
+	case keymap.ActionToggleLineNumbers:
+		// TODO: Implement
+
+	case keymap.ActionToggleWrap:
+		// TODO: Implement
+	}
+
+	return a, nil
+}
+
+// ════════════════════════════════════════════════════════════════
+// CURSOR MOVEMENT
+// ════════════════════════════════════════════════════════════════
+
+func (a *App) cursorUp() {
+	if a.row > 0 {
+		a.row--
+		a.clampCol()
+	}
+}
+
+func (a *App) cursorDown() {
+	if a.row < len(a.lines)-1 {
+		a.row++
+		a.clampCol()
+	}
+}
+
+func (a *App) cursorLeft() {
+	if a.col > 0 {
+		a.col--
+	}
+}
+
+func (a *App) cursorRight() {
+	maxCol := len(a.lines[a.row])
+	if a.keymap.CurrentMode == keymap.ModeNormal && maxCol > 0 {
+		maxCol--
+	}
+	if a.col < maxCol {
+		a.col++
+	}
+}
+
+func (a *App) clampCol() {
+	maxCol := len(a.lines[a.row])
+	if a.keymap.CurrentMode == keymap.ModeNormal && maxCol > 0 {
+		maxCol--
+	}
+	if a.col > maxCol {
+		a.col = maxCol
+	}
+	if a.col < 0 {
+		a.col = 0
+	}
+}
+
+func (a *App) wordNext() {
+	line := a.lines[a.row]
+	col := a.col
+
+	// Skip current word
+	for col < len(line) && isWordChar(line[col]) {
+		col++
+	}
+	// Skip whitespace
+	for col < len(line) && !isWordChar(line[col]) {
+		col++
+	}
+
+	if col >= len(line) && a.row < len(a.lines)-1 {
+		a.row++
+		a.col = 0
+	} else {
+		a.col = col
+	}
+}
+
+func (a *App) wordPrev() {
+	if a.col == 0 && a.row > 0 {
+		a.row--
+		a.col = len(a.lines[a.row])
+		return
+	}
+
+	line := a.lines[a.row]
+	col := a.col
+
+	// Move back one if at word
+	if col > 0 {
+		col--
+	}
+
+	// Skip whitespace backwards
+	for col > 0 && !isWordChar(line[col]) {
+		col--
+	}
+	// Skip word backwards
+	for col > 0 && isWordChar(line[col-1]) {
+		col--
+	}
+
+	a.col = col
+}
+
+func isWordChar(c byte) bool {
+	return (c >= 'a' && c <= 'z') ||
+		(c >= 'A' && c <= 'Z') ||
+		(c >= '0' && c <= '9') ||
+		c == '_'
+}
+
+// ════════════════════════════════════════════════════════════════
+// TEXT EDITING
+// ════════════════════════════════════════════════════════════════
 
 func (a *App) insertChar(r rune) {
 	line := a.lines[a.row]
@@ -326,6 +535,8 @@ func (a *App) deleteChar() {
 }
 
 func (a *App) deleteLine() {
+	a.yankBuffer = a.lines[a.row] + "\n"
+
 	if len(a.lines) == 1 {
 		a.lines[0] = ""
 		a.col = 0
@@ -338,19 +549,277 @@ func (a *App) deleteLine() {
 	}
 }
 
-func (a *App) clampCol() {
-	if a.col > len(a.lines[a.row]) {
-		a.col = len(a.lines[a.row])
+func (a *App) deleteToEnd() {
+	line := a.lines[a.row]
+	a.yankBuffer = line[a.col:]
+	a.lines[a.row] = line[:a.col]
+	a.clampCol()
+}
+
+func (a *App) joinLines() {
+	if a.row < len(a.lines)-1 {
+		a.lines[a.row] = a.lines[a.row] + " " + strings.TrimLeft(a.lines[a.row+1], " \t")
+		a.lines = append(a.lines[:a.row+1], a.lines[a.row+2:]...)
 	}
 }
 
-// View implements tea.Model
+func (a *App) yankLine() {
+	a.yankBuffer = a.lines[a.row] + "\n"
+}
+
+func (a *App) paste() {
+	if a.yankBuffer == "" {
+		return
+	}
+
+	if strings.HasSuffix(a.yankBuffer, "\n") {
+		// Paste line below
+		content := strings.TrimSuffix(a.yankBuffer, "\n")
+		newLines := make([]string, 0, len(a.lines)+1)
+		newLines = append(newLines, a.lines[:a.row+1]...)
+		newLines = append(newLines, content)
+		if a.row+1 < len(a.lines) {
+			newLines = append(newLines, a.lines[a.row+1:]...)
+		}
+		a.lines = newLines
+		a.row++
+		a.col = 0
+	} else {
+		// Paste inline
+		line := a.lines[a.row]
+		a.lines[a.row] = line[:a.col+1] + a.yankBuffer + line[a.col+1:]
+		a.col += len(a.yankBuffer)
+	}
+}
+
+func (a *App) pasteAbove() {
+	if a.yankBuffer == "" {
+		return
+	}
+
+	if strings.HasSuffix(a.yankBuffer, "\n") {
+		// Paste line above
+		content := strings.TrimSuffix(a.yankBuffer, "\n")
+		newLines := make([]string, 0, len(a.lines)+1)
+		newLines = append(newLines, a.lines[:a.row]...)
+		newLines = append(newLines, content)
+		newLines = append(newLines, a.lines[a.row:]...)
+		a.lines = newLines
+		a.col = 0
+	} else {
+		// Paste inline before cursor
+		line := a.lines[a.row]
+		a.lines[a.row] = line[:a.col] + a.yankBuffer + line[a.col:]
+	}
+}
+
+// ════════════════════════════════════════════════════════════════
+// OPERATOR + MOTION
+// ════════════════════════════════════════════════════════════════
+
+func (a *App) deleteWithMotion(motion keymap.Action, count int) {
+	startRow, startCol := a.row, a.col
+
+	// Execute motion to find end position
+	for i := 0; i < count; i++ {
+		a.executeMotion(motion)
+	}
+
+	endRow, endCol := a.row, a.col
+
+	// Ensure start <= end
+	if endRow < startRow || (endRow == startRow && endCol < startCol) {
+		startRow, endRow = endRow, startRow
+		startCol, endCol = endCol, startCol
+	}
+
+	// Delete the range
+	if startRow == endRow {
+		// Same line
+		line := a.lines[startRow]
+		if endCol > len(line) {
+			endCol = len(line)
+		}
+		a.yankBuffer = line[startCol:endCol]
+		a.lines[startRow] = line[:startCol] + line[endCol:]
+		a.row = startRow
+		a.col = startCol
+	} else {
+		// Multiple lines
+		var yanked strings.Builder
+		yanked.WriteString(a.lines[startRow][startCol:])
+		yanked.WriteString("\n")
+		for i := startRow + 1; i < endRow; i++ {
+			yanked.WriteString(a.lines[i])
+			yanked.WriteString("\n")
+		}
+		if endRow < len(a.lines) {
+			yanked.WriteString(a.lines[endRow][:endCol])
+		}
+		a.yankBuffer = yanked.String()
+
+		// Join lines
+		newLine := a.lines[startRow][:startCol]
+		if endRow < len(a.lines) {
+			newLine += a.lines[endRow][endCol:]
+		}
+		a.lines[startRow] = newLine
+
+		// Remove middle lines
+		a.lines = append(a.lines[:startRow+1], a.lines[endRow+1:]...)
+
+		a.row = startRow
+		a.col = startCol
+	}
+
+	a.clampCol()
+}
+
+func (a *App) yankWithMotion(motion keymap.Action, count int) {
+	startRow, startCol := a.row, a.col
+
+	// Execute motion to find end position
+	for i := 0; i < count; i++ {
+		a.executeMotion(motion)
+	}
+
+	endRow, endCol := a.row, a.col
+
+	// Restore position
+	a.row, a.col = startRow, startCol
+
+	// Ensure start <= end
+	if endRow < startRow || (endRow == startRow && endCol < startCol) {
+		startRow, endRow = endRow, startRow
+		startCol, endCol = endCol, startCol
+	}
+
+	// Yank the range
+	if startRow == endRow {
+		line := a.lines[startRow]
+		if endCol > len(line) {
+			endCol = len(line)
+		}
+		a.yankBuffer = line[startCol:endCol]
+	} else {
+		var yanked strings.Builder
+		yanked.WriteString(a.lines[startRow][startCol:])
+		yanked.WriteString("\n")
+		for i := startRow + 1; i < endRow; i++ {
+			yanked.WriteString(a.lines[i])
+			yanked.WriteString("\n")
+		}
+		if endRow < len(a.lines) {
+			yanked.WriteString(a.lines[endRow][:endCol])
+		}
+		a.yankBuffer = yanked.String()
+	}
+}
+
+func (a *App) executeMotion(motion keymap.Action) {
+	switch motion {
+	case keymap.ActionMoveUp:
+		a.cursorUp()
+	case keymap.ActionMoveDown:
+		a.cursorDown()
+	case keymap.ActionMoveLeft:
+		a.cursorLeft()
+	case keymap.ActionMoveRight:
+		a.cursorRight()
+	case keymap.ActionMoveWordNext:
+		a.wordNext()
+	case keymap.ActionMoveWordPrev:
+		a.wordPrev()
+	case keymap.ActionGotoLineStart:
+		a.col = 0
+	case keymap.ActionGotoLineEnd:
+		a.col = len(a.lines[a.row])
+	case keymap.ActionGotoTop:
+		a.row = 0
+		a.col = 0
+	case keymap.ActionGotoBottom:
+		a.row = len(a.lines) - 1
+		a.clampCol()
+	}
+}
+
+// ════════════════════════════════════════════════════════════════
+// UNDO / REDO
+// ════════════════════════════════════════════════════════════════
+
+func (a *App) saveUndo() {
+	state := editorState{
+		lines: make([]string, len(a.lines)),
+		row:   a.row,
+		col:   a.col,
+	}
+	copy(state.lines, a.lines)
+	a.undoStack = append(a.undoStack, state)
+
+	// Limit undo stack
+	if len(a.undoStack) > 100 {
+		a.undoStack = a.undoStack[1:]
+	}
+
+	// Clear redo stack
+	a.redoStack = nil
+}
+
+func (a *App) undo() {
+	if len(a.undoStack) == 0 {
+		return
+	}
+
+	// Save current state to redo
+	redoState := editorState{
+		lines: make([]string, len(a.lines)),
+		row:   a.row,
+		col:   a.col,
+	}
+	copy(redoState.lines, a.lines)
+	a.redoStack = append(a.redoStack, redoState)
+
+	// Restore from undo
+	state := a.undoStack[len(a.undoStack)-1]
+	a.undoStack = a.undoStack[:len(a.undoStack)-1]
+
+	a.lines = state.lines
+	a.row = state.row
+	a.col = state.col
+}
+
+func (a *App) redo() {
+	if len(a.redoStack) == 0 {
+		return
+	}
+
+	// Save current state to undo
+	undoState := editorState{
+		lines: make([]string, len(a.lines)),
+		row:   a.row,
+		col:   a.col,
+	}
+	copy(undoState.lines, a.lines)
+	a.undoStack = append(a.undoStack, undoState)
+
+	// Restore from redo
+	state := a.redoStack[len(a.redoStack)-1]
+	a.redoStack = a.redoStack[:len(a.redoStack)-1]
+
+	a.lines = state.lines
+	a.row = state.row
+	a.col = state.col
+}
+
+// ════════════════════════════════════════════════════════════════
+// VIEW
+// ════════════════════════════════════════════════════════════════
+
 func (a *App) View() string {
 	if a.width == 0 || a.height == 0 {
 		return "Loading..."
 	}
 
-	// Show help overlay
 	if a.showHelp {
 		return a.renderHelp()
 	}
@@ -422,59 +891,50 @@ func (a *App) View() string {
 func (a *App) renderHelp() string {
 	var content strings.Builder
 
-	// Title
 	content.WriteString(helpTitleStyle.Render("Help"))
 	content.WriteString("\n\n")
 
-	// Navigation section
 	content.WriteString(helpSectionStyle.Render("Navigation"))
 	content.WriteString("\n")
-	content.WriteString(helpKeyStyle.Render("↑/k") + helpDescStyle.Render("Move up") + "\n")
-	content.WriteString(helpKeyStyle.Render("↓/j") + helpDescStyle.Render("Move down") + "\n")
-	content.WriteString(helpKeyStyle.Render("←/h") + helpDescStyle.Render("Move left") + "\n")
-	content.WriteString(helpKeyStyle.Render("→/l") + helpDescStyle.Render("Move right") + "\n")
-	content.WriteString(helpKeyStyle.Render("0 / Home") + helpDescStyle.Render("Start of line") + "\n")
-	content.WriteString(helpKeyStyle.Render("$ / End") + helpDescStyle.Render("End of line") + "\n")
-	content.WriteString(helpKeyStyle.Render("g") + helpDescStyle.Render("Go to first line") + "\n")
-	content.WriteString(helpKeyStyle.Render("G") + helpDescStyle.Render("Go to last line") + "\n")
+	content.WriteString(helpKeyStyle.Render("[count]k/↑") + helpDescStyle.Render("Move up") + "\n")
+	content.WriteString(helpKeyStyle.Render("[count]j/↓") + helpDescStyle.Render("Move down") + "\n")
+	content.WriteString(helpKeyStyle.Render("[count]h/←") + helpDescStyle.Render("Move left") + "\n")
+	content.WriteString(helpKeyStyle.Render("[count]l/→") + helpDescStyle.Render("Move right") + "\n")
+	content.WriteString(helpKeyStyle.Render("[count]w") + helpDescStyle.Render("Next word") + "\n")
+	content.WriteString(helpKeyStyle.Render("[count]b") + helpDescStyle.Render("Previous word") + "\n")
+	content.WriteString(helpKeyStyle.Render("0 / $") + helpDescStyle.Render("Start / End of line") + "\n")
+	content.WriteString(helpKeyStyle.Render("gg / G") + helpDescStyle.Render("Top / Bottom of file") + "\n")
 
-	// Editing section
 	content.WriteString(helpSectionStyle.Render("Editing"))
 	content.WriteString("\n")
-	content.WriteString(helpKeyStyle.Render("i") + helpDescStyle.Render("Insert mode") + "\n")
-	content.WriteString(helpKeyStyle.Render("a") + helpDescStyle.Render("Append (insert after)") + "\n")
-	content.WriteString(helpKeyStyle.Render("o") + helpDescStyle.Render("New line below") + "\n")
-	content.WriteString(helpKeyStyle.Render("O") + helpDescStyle.Render("New line above") + "\n")
-	content.WriteString(helpKeyStyle.Render("x") + helpDescStyle.Render("Delete character") + "\n")
-	content.WriteString(helpKeyStyle.Render("d") + helpDescStyle.Render("Delete line") + "\n")
-	content.WriteString(helpKeyStyle.Render("Esc") + helpDescStyle.Render("Normal mode") + "\n")
+	content.WriteString(helpKeyStyle.Render("i / a") + helpDescStyle.Render("Insert / Append mode") + "\n")
+	content.WriteString(helpKeyStyle.Render("o / O") + helpDescStyle.Render("Open line below/above") + "\n")
+	content.WriteString(helpKeyStyle.Render("[count]x") + helpDescStyle.Render("Delete character") + "\n")
+	content.WriteString(helpKeyStyle.Render("[count]dd") + helpDescStyle.Render("Delete line") + "\n")
+	content.WriteString(helpKeyStyle.Render("d{motion}") + helpDescStyle.Render("Delete with motion") + "\n")
+	content.WriteString(helpKeyStyle.Render("yy / y{motion}") + helpDescStyle.Render("Yank line/motion") + "\n")
+	content.WriteString(helpKeyStyle.Render("p / P") + helpDescStyle.Render("Paste after/before") + "\n")
+	content.WriteString(helpKeyStyle.Render("u / Ctrl+r") + helpDescStyle.Render("Undo / Redo") + "\n")
 
-	// General section
 	content.WriteString(helpSectionStyle.Render("General"))
 	content.WriteString("\n")
+	content.WriteString(helpKeyStyle.Render("Esc") + helpDescStyle.Render("Normal mode") + "\n")
 	content.WriteString(helpKeyStyle.Render("?") + helpDescStyle.Render("Toggle help") + "\n")
-	content.WriteString(helpKeyStyle.Render("F1") + helpDescStyle.Render("Toggle help") + "\n")
-	content.WriteString(helpKeyStyle.Render("q") + helpDescStyle.Render("Quit (normal mode)") + "\n")
+	content.WriteString(helpKeyStyle.Render("q") + helpDescStyle.Render("Quit") + "\n")
 	content.WriteString(helpKeyStyle.Render("Ctrl+C") + helpDescStyle.Render("Force quit") + "\n")
 
-	// Expressions section
-	content.WriteString(helpSectionStyle.Render("Expressions"))
+	content.WriteString(helpSectionStyle.Render("Examples"))
 	content.WriteString("\n")
-	content.WriteString(helpDescStyle.Render("100 + 50        → 150") + "\n")
-	content.WriteString(helpDescStyle.Render("20% of 150      → 30") + "\n")
-	content.WriteString(helpDescStyle.Render("$100 + 15%      → $115.00") + "\n")
-	content.WriteString(helpDescStyle.Render("price = 100     → 100") + "\n")
-	content.WriteString(helpDescStyle.Render("price * 2       → 200") + "\n")
+	content.WriteString(helpDescStyle.Render("5j      → Move down 5 lines") + "\n")
+	content.WriteString(helpDescStyle.Render("3dd     → Delete 3 lines") + "\n")
+	content.WriteString(helpDescStyle.Render("d3w     → Delete 3 words") + "\n")
+	content.WriteString(helpDescStyle.Render("y$      → Yank to end of line") + "\n")
 
-	// Footer
-	content.WriteString(helpFooterStyle.Render("\nPress ? or Esc to close"))
+	content.WriteString(helpFooterStyle.Render("\nPress any key to close"))
 
-	// Wrap in border and center
 	helpBox := helpBorderStyle.Render(content.String())
 
-	return lipgloss.Place(a.width, a.height,
-		lipgloss.Center, lipgloss.Center,
-		helpBox)
+	return lipgloss.Place(a.width, a.height, lipgloss.Center, lipgloss.Center, helpBox)
 }
 
 func (a *App) renderLineWithCursor(line string) string {
@@ -529,24 +989,29 @@ func (a *App) evaluateLine(line string) string {
 }
 
 func (a *App) renderStatusBar() string {
+	mode := a.keymap.GetMode()
+
 	var modeStyle lipgloss.Style
-	if a.mode == ModeInsert {
-		modeStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(lipgloss.Color("#000")).
-			Background(lipgloss.Color("#7ee787")).
-			Padding(0, 1)
-	} else {
-		modeStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(lipgloss.Color("#000")).
-			Background(lipgloss.Color("#79c0ff")).
-			Padding(0, 1)
+	switch mode {
+	case keymap.ModeInsert:
+		modeStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#000")).Background(lipgloss.Color("#7ee787")).Padding(0, 1)
+	case keymap.ModeVisual:
+		modeStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#000")).Background(lipgloss.Color("#d2a8ff")).Padding(0, 1)
+	case keymap.ModeOperatorPending:
+		modeStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#000")).Background(lipgloss.Color("#ffa657")).Padding(0, 1)
+	default:
+		modeStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#000")).Background(lipgloss.Color("#79c0ff")).Padding(0, 1)
 	}
 
-	mode := modeStyle.Render(a.mode.String())
+	modeStr := modeStyle.Render(mode.String())
 
-	hint := lipgloss.NewStyle().Foreground(lipgloss.Color("#666")).Render("  ? help  ^s save  ^r rates")
+	// Show pending keys
+	pending := a.keymap.State.PendingDisplay()
+	if pending != "" {
+		modeStr += " " + pendingStyle.Render(pending)
+	}
+
+	hint := lipgloss.NewStyle().Foreground(lipgloss.Color("#666")).Render("  ? help  ^s save")
 
 	pos := fmt.Sprintf("%d:%d", a.row+1, a.col+1)
 
@@ -556,7 +1021,7 @@ func (a *App) renderStatusBar() string {
 		totalStr = resultStyle.Render(fmt.Sprintf("total: %s", total.String())) + "  "
 	}
 
-	left := mode + hint
+	left := modeStr + hint
 	right := totalStr + pos
 
 	spaces := a.width - lipgloss.Width(left) - lipgloss.Width(right)
@@ -567,6 +1032,10 @@ func (a *App) renderStatusBar() string {
 	statusBg := lipgloss.NewStyle().Background(lipgloss.Color("#1a1a2e"))
 	return statusBg.Render(left + strings.Repeat(" ", spaces) + right)
 }
+
+// ════════════════════════════════════════════════════════════════
+// RUN
+// ════════════════════════════════════════════════════════════════
 
 // Run starts the TUI
 func Run() error {
