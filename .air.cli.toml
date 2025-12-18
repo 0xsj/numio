@@ -1,4 +1,4 @@
-# .air.toml - Air hot reload configuration for numio
+# .air.cli.toml - Air hot reload configuration for numio CLI
 # https://github.com/air-verse/air
 
 root = "."
@@ -6,10 +6,10 @@ tmp_dir = "tmp"
 
 [build]
 # Command to build the binary
-cmd = "go build -o ./tmp/numio-tui ./cmd/numio-tui"
+cmd = "go build -o ./tmp/numio-cli ./cmd/numio-cli"
 
 # Binary to run after build
-bin = "./tmp/numio-tui"
+bin = "./tmp/numio-cli"
 
 # Watch these directories for changes
 include_dir = ["cmd", "internal", "pkg"]
@@ -33,7 +33,7 @@ exclude_unchanged = true
 follow_symlink = false
 
 # Delay before rebuilding (in milliseconds)
-delay = 1000
+delay = 500
 
 # Stop running old binary before building new one
 stop_on_error = true
@@ -42,9 +42,9 @@ stop_on_error = true
 send_interrupt = true
 
 # Delay after sending interrupt before killing (in milliseconds)
-kill_delay = 1000
+kill_delay = 500
 
-# Arguments to pass to the binary
+# Arguments to pass to the binary (starts REPL by default)
 args_bin = []
 
 # Rerun binary even if build fails (use previous build)
@@ -60,21 +60,18 @@ poll = false
 poll_interval = 500
 
 [log]
-# Disable Air's logging to avoid interference with TUI
-time = false
-main_only = true
+# Show timestamp in log
+time = true
+
+# Log level: debug, info, warn, error
+main_only = false
 
 [color]
 # Customize colors
-main = "magenta"
-watcher = "cyan"
+main = "cyan"
+watcher = "blue"
 build = "yellow"
 runner = "green"
-
-[screen]
-# Clear screen before running - helps with TUI apps
-clear_on_rebuild = true
-keep_scroll = false
 
 [misc]
 # Delete tmp directory on exit
