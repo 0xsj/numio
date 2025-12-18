@@ -1,0 +1,78 @@
+# .air.cli.toml - Air hot reload configuration for numio CLI
+# https://github.com/air-verse/air
+
+root = "."
+tmp_dir = "tmp"
+
+[build]
+# Command to build the binary
+cmd = "go build -o ./tmp/numio-cli ./cmd/numio-cli"
+
+# Binary to run after build
+bin = "./tmp/numio-cli"
+
+# Watch these directories for changes
+include_dir = ["cmd", "internal", "pkg"]
+
+# Watch these file extensions
+include_ext = ["go", "toml"]
+
+# Exclude directories
+exclude_dir = ["tmp", "vendor", "testdata", "docs", ".git"]
+
+# Exclude files matching these patterns
+exclude_file = []
+
+# Exclude files matching these regexes
+exclude_regex = ["_test\\.go$"]
+
+# Exclude unchanged files
+exclude_unchanged = true
+
+# Follow symlinks
+follow_symlink = false
+
+# Delay before rebuilding (in milliseconds)
+delay = 500
+
+# Stop running old binary before building new one
+stop_on_error = true
+
+# Send interrupt signal before killing (for graceful shutdown)
+send_interrupt = true
+
+# Delay after sending interrupt before killing (in milliseconds)
+kill_delay = 500
+
+# Arguments to pass to the binary (starts REPL by default)
+args_bin = []
+
+# Rerun binary even if build fails (use previous build)
+rerun = false
+
+# Rerun delay (in milliseconds)
+rerun_delay = 500
+
+# Enable polling mode instead of fsnotify (useful for Docker/VM)
+poll = false
+
+# Poll interval in milliseconds
+poll_interval = 500
+
+[log]
+# Show timestamp in log
+time = true
+
+# Log level: debug, info, warn, error
+main_only = false
+
+[color]
+# Customize colors
+main = "cyan"
+watcher = "blue"
+build = "yellow"
+runner = "green"
+
+[misc]
+# Delete tmp directory on exit
+clean_on_exit = true
