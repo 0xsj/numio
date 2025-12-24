@@ -335,7 +335,7 @@ func (a *App) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 
 	case keymap.ActionSave:
 		// TODO: Implement save
-		
+
 	case keymap.ActionSaveQuit:
 		// TODO: Implement save
 		return a, tea.Quit

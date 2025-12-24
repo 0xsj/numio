@@ -16,10 +16,10 @@ import (
 
 // Default cache settings
 const (
-	DefaultTTL        = 1 * time.Hour
-	DefaultMemoryTTL  = 5 * time.Minute
-	DefaultCacheDir   = ".numio/cache"
-	DefaultRatesFile  = "rates.json"
+	DefaultTTL       = 1 * time.Hour
+	DefaultMemoryTTL = 5 * time.Minute
+	DefaultCacheDir  = ".numio/cache"
+	DefaultRatesFile = "rates.json"
 )
 
 // RateCache stores exchange rates with multiple cache layers.
@@ -49,9 +49,9 @@ type ratePair struct {
 
 // CachedRates represents the JSON structure for file persistence.
 type CachedRates struct {
-	Timestamp int64              `json:"timestamp"`
-	Rates     map[string]float64 `json:"rates"`
-	BaseCurrency string          `json:"base_currency"`
+	Timestamp    int64              `json:"timestamp"`
+	Rates        map[string]float64 `json:"rates"`
+	BaseCurrency string             `json:"base_currency"`
 }
 
 // New creates a new RateCache with default settings.
@@ -481,10 +481,10 @@ func (c *RateCache) loadDefaults() {
 
 	// Metal rates (USD per troy oz)
 	metalDefaults := map[string]float64{
-		"XAU": 2650.0,  // Gold
-		"XAG": 31.50,   // Silver
-		"XPT": 1020.0,  // Platinum
-		"XPD": 1100.0,  // Palladium
+		"XAU": 2650.0, // Gold
+		"XAG": 31.50,  // Silver
+		"XPT": 1020.0, // Platinum
+		"XPD": 1100.0, // Palladium
 	}
 
 	c.mu.Lock()

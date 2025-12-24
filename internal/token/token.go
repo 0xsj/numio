@@ -19,16 +19,16 @@ const (
 	IDENTIFIER // variable names, unit names, currency codes
 
 	// Operators
-	PLUS     // +
-	MINUS    // -
-	STAR     // *
-	SLASH    // /
-	CARET    // ^
-	POWER    // **
-	LPAREN   // (
-	RPAREN   // )
-	EQUALS   // =
-	COMMA    // ,
+	PLUS   // +
+	MINUS  // -
+	STAR   // *
+	SLASH  // /
+	CARET  // ^
+	POWER  // **
+	LPAREN // (
+	RPAREN // )
+	EQUALS // =
+	COMMA  // ,
 
 	// Keywords
 	IN // in, to (for conversions)
