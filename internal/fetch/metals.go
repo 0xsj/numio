@@ -141,7 +141,7 @@ func (p *GoldAPIProvider) fetchMetal(ctx context.Context, apiKey, metal string) 
 	req.Header.Set("x-access-token", apiKey)
 	req.Header.Set("Accept", "application/json")
 
-	resp, err := p.Client().http.Do(req)
+	resp, err := p.Client().DoRaw(req)
 	if err != nil {
 		return 0, err
 	}

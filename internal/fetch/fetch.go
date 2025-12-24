@@ -203,6 +203,13 @@ func (c *Client) Do(ctx context.Context, method, url string, body io.Reader) (*R
 	return nil, ErrRequestFailed
 }
 
+// DoRaw performs a raw http.Request using the underlying client.
+// Use this when you need custom headers or request configuration.
+// Note: This does not apply rate limiting or retries.
+func (c *Client) DoRaw(req *http.Request) (*http.Response, error) {
+	return c.http.Do(req)
+}
+
 // calculateBackoff returns the backoff duration for a retry attempt.
 // Uses exponential backoff with jitter.
 func (c *Client) calculateBackoff(attempt int) time.Duration {

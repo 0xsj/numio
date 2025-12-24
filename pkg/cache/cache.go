@@ -1,9 +1,10 @@
-// internal/cache/cache.go
+// pkg/cache/cache.go
 
 // Package cache provides exchange rate caching with BFS path-finding.
 package cache
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -11,15 +12,17 @@ import (
 	"sync"
 	"time"
 
+	"github.com/0xsj/numio/internal/fetch"
 	"github.com/0xsj/numio/pkg/types"
 )
 
 // Default cache settings
 const (
-	DefaultTTL       = 1 * time.Hour
-	DefaultMemoryTTL = 5 * time.Minute
-	DefaultCacheDir  = ".numio/cache"
-	DefaultRatesFile = "rates.json"
+	DefaultTTL            = 1 * time.Hour
+	DefaultMemoryTTL      = 5 * time.Minute
+	DefaultCacheDir       = ".numio/cache"
+	DefaultRatesFile      = "rates.json"
+	DefaultRefreshTimeout = 30 * time.Second
 )
 
 // RateCache stores exchange rates with multiple cache layers.
@@ -208,6 +211,12 @@ func (c *RateCache) ApplyRawRates(rates map[string]float64) {
 			if rate != 0 {
 				c.rates[ratePair{From: "USD", To: code}] = 1.0 / rate
 			}
+		} else if types.IsMetal(code) {
+			// Metal: 1 oz = rate USD
+			c.rates[ratePair{From: code, To: "USD"}] = rate
+			if rate != 0 {
+				c.rates[ratePair{From: "USD", To: code}] = 1.0 / rate
+			}
 		} else {
 			// Fiat: 1 USD = rate CURRENCY
 			c.rates[ratePair{From: "USD", To: code}] = rate
@@ -268,6 +277,22 @@ func (c *RateCache) Age() time.Duration {
 		return 0
 	}
 	return time.Since(c.lastUpdate)
+}
+
+// TTL returns the cache TTL.
+func (c *RateCache) TTL() time.Duration {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.ttl
+}
+
+// SetTTL sets the cache TTL.
+func (c *RateCache) SetTTL(ttl time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if ttl > 0 {
+		c.ttl = ttl
+	}
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -387,6 +412,147 @@ func (c *RateCache) isCacheFileValid() bool {
 
 	timestamp := time.Unix(cached.Timestamp, 0)
 	return time.Since(timestamp) <= c.ttl
+}
+
+// ════════════════════════════════════════════════════════════════
+// REFRESH FROM NETWORK
+// ════════════════════════════════════════════════════════════════
+
+// Refresh fetches fresh rates from the network and updates the cache.
+// Returns the number of rates fetched, or an error.
+func (c *RateCache) Refresh(ctx context.Context) (int, error) {
+	result, err := fetch.FetchAllRates(ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	if result.IsEmpty() {
+		return 0, nil
+	}
+
+	// Apply the fetched rates
+	c.ApplyRawRates(result.Rates)
+
+	// Save to file cache
+	_ = c.SaveToFile()
+
+	return result.Count(), nil
+}
+
+// RefreshIfExpired fetches fresh rates only if the cache is expired.
+// Returns the number of rates fetched (0 if cache was valid), or an error.
+func (c *RateCache) RefreshIfExpired(ctx context.Context) (int, error) {
+	if c.IsValid() {
+		return 0, nil
+	}
+	return c.Refresh(ctx)
+}
+
+// RefreshFiat fetches only fiat currency rates.
+func (c *RateCache) RefreshFiat(ctx context.Context) (int, error) {
+	result, err := fetch.FetchFiatRates(ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	if result.IsEmpty() {
+		return 0, nil
+	}
+
+	c.applyRatesResult(result)
+	_ = c.SaveToFile()
+
+	return result.Count(), nil
+}
+
+// RefreshCrypto fetches only cryptocurrency rates.
+func (c *RateCache) RefreshCrypto(ctx context.Context) (int, error) {
+	result, err := fetch.FetchCryptoRates(ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	if result.IsEmpty() {
+		return 0, nil
+	}
+
+	c.applyRatesResult(result)
+	_ = c.SaveToFile()
+
+	return result.Count(), nil
+}
+
+// RefreshMetals fetches only precious metal rates.
+func (c *RateCache) RefreshMetals(ctx context.Context) (int, error) {
+	result, err := fetch.FetchMetalRates(ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	if result.IsEmpty() {
+		return 0, nil
+	}
+
+	c.applyRatesResult(result)
+	_ = c.SaveToFile()
+
+	return result.Count(), nil
+}
+
+// applyRatesResult applies a fetch.RatesResult to the cache.
+// This handles the different rate semantics for fiat vs crypto vs metals.
+func (c *RateCache) applyRatesResult(result *fetch.RatesResult) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	for code, rate := range result.Rates {
+		code = strings.ToUpper(code)
+
+		// Store in rawRates for persistence
+		c.rawRates[code] = rate
+
+		switch result.Type {
+		case fetch.ProviderTypeFiat:
+			// Fiat: 1 USD = rate CURRENCY
+			c.rates[ratePair{From: "USD", To: code}] = rate
+			if rate != 0 {
+				c.rates[ratePair{From: code, To: "USD"}] = 1.0 / rate
+			}
+
+		case fetch.ProviderTypeCrypto:
+			// Crypto: 1 TOKEN = rate USD
+			c.rates[ratePair{From: code, To: "USD"}] = rate
+			if rate != 0 {
+				c.rates[ratePair{From: "USD", To: code}] = 1.0 / rate
+			}
+
+		case fetch.ProviderTypeMetal:
+			// Metal: 1 oz = rate USD
+			c.rates[ratePair{From: code, To: "USD"}] = rate
+			if rate != 0 {
+				c.rates[ratePair{From: "USD", To: code}] = 1.0 / rate
+			}
+		}
+	}
+
+	c.lastUpdate = time.Now()
+}
+
+// RefreshAsync starts a background refresh and returns immediately.
+// The done channel receives the error (or nil) when the refresh completes.
+// If done is nil, no notification is sent.
+func (c *RateCache) RefreshAsync(done chan<- error) {
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), DefaultRefreshTimeout)
+		defer cancel()
+
+		_, err := c.Refresh(ctx)
+
+		if done != nil {
+			done <- err
+			close(done)
+		}
+	}()
 }
 
 // ════════════════════════════════════════════════════════════════
