@@ -4,6 +4,7 @@
 package engine
 
 import (
+	"context"
 	"strings"
 
 	"github.com/0xsj/numio/internal/ast"
@@ -250,9 +251,53 @@ func (e *Engine) IsRateCacheValid() bool {
 	return e.rateCache.IsValid()
 }
 
+// IsRateCacheExpired returns true if the rate cache has expired.
+func (e *Engine) IsRateCacheExpired() bool {
+	return e.rateCache.IsExpired()
+}
+
 // Convert converts an amount between currencies/assets.
 func (e *Engine) Convert(amount float64, from, to string) (float64, bool) {
 	return e.rateCache.Convert(amount, from, to)
+}
+
+// RefreshRates fetches fresh rates from the network.
+// Returns the number of rates fetched, or an error.
+func (e *Engine) RefreshRates(ctx context.Context) (int, error) {
+	return e.rateCache.Refresh(ctx)
+}
+
+// RefreshRatesIfExpired fetches fresh rates only if the cache is expired.
+// Returns the number of rates fetched (0 if cache was valid), or an error.
+func (e *Engine) RefreshRatesIfExpired(ctx context.Context) (int, error) {
+	return e.rateCache.RefreshIfExpired(ctx)
+}
+
+// RefreshRatesAsync starts a background refresh and returns immediately.
+// The done channel receives the error (or nil) when the refresh completes.
+// If done is nil, no notification is sent.
+func (e *Engine) RefreshRatesAsync(done chan<- error) {
+	e.rateCache.RefreshAsync(done)
+}
+
+// RefreshFiatRates fetches only fiat currency rates.
+func (e *Engine) RefreshFiatRates(ctx context.Context) (int, error) {
+	return e.rateCache.RefreshFiat(ctx)
+}
+
+// RefreshCryptoRates fetches only cryptocurrency rates.
+func (e *Engine) RefreshCryptoRates(ctx context.Context) (int, error) {
+	return e.rateCache.RefreshCrypto(ctx)
+}
+
+// RefreshMetalRates fetches only precious metal rates.
+func (e *Engine) RefreshMetalRates(ctx context.Context) (int, error) {
+	return e.rateCache.RefreshMetals(ctx)
+}
+
+// RateCacheStats returns statistics about the rate cache.
+func (e *Engine) RateCacheStats() cache.Stats {
+	return e.rateCache.Stats()
 }
 
 // ════════════════════════════════════════════════════════════════

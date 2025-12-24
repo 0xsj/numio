@@ -194,9 +194,9 @@ func (km *KeyMap) loadOperatorDefaults() {
 	o.Bind("G", ActionGotoBottom)
 
 	// Double operator = line operation (dd, yy, cc)
-	o.Bind("d", ActionDeleteLine)  // dd
-	o.Bind("y", ActionYankLine)    // yy
-	o.Bind("c", ActionDeleteLine)  // cc (delete line, enter insert)
+	o.Bind("d", ActionDeleteLine) // dd
+	o.Bind("y", ActionYankLine)   // yy
+	o.Bind("c", ActionDeleteLine) // cc (delete line, enter insert)
 }
 
 // GetBindingMap returns the binding map for a mode.

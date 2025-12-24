@@ -46,15 +46,15 @@ func (t UnitType) String() string {
 
 // Unit represents a unit of measurement.
 type Unit struct {
-	Code         string   // Canonical code: "km", "lb", "h"
-	Symbol       string   // Display symbol (often same as code)
-	Name         string   // Full name: "kilometer", "pound", "hour"
-	Plural       string   // Plural form: "kilometers", "pounds", "hours"
-	Type         UnitType // Category
-	Aliases      []string // Alternative names
-	ToBase       float64  // Multiplier to convert to base unit
-	FromBaseAdd  float64  // Additive offset from base (for temperature)
-	IsBase       bool     // True if this is the base unit for its type
+	Code        string   // Canonical code: "km", "lb", "h"
+	Symbol      string   // Display symbol (often same as code)
+	Name        string   // Full name: "kilometer", "pound", "hour"
+	Plural      string   // Plural form: "kilometers", "pounds", "hours"
+	Type        UnitType // Category
+	Aliases     []string // Alternative names
+	ToBase      float64  // Multiplier to convert to base unit
+	FromBaseAdd float64  // Additive offset from base (for temperature)
+	IsBase      bool     // True if this is the base unit for its type
 }
 
 // String returns the unit code.

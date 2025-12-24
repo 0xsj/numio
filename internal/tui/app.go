@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/0xsj/numio/internal/highlight"
 	"github.com/0xsj/numio/internal/tui/keymap"
 	"github.com/0xsj/numio/pkg/engine"
 	tea "github.com/charmbracelet/bubbletea"
@@ -15,7 +16,6 @@ import (
 // Styles
 var (
 	lineNumStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#666"))
-	commentStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#666")).Italic(true)
 	resultStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("#7ee787"))
 	errorStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("#f85149"))
 	cursorStyle  = lipgloss.NewStyle().Reverse(true)
@@ -39,6 +39,9 @@ type App struct {
 	width  int
 	height int
 	engine *engine.Engine
+
+	// Syntax highlighting
+	highlighter *highlight.Highlighter
 
 	// Keymap
 	keymap   *keymap.KeyMap
@@ -65,18 +68,31 @@ func NewApp() *App {
 	km, _ := keymap.LoadOrCreate(keymap.DefaultConfigPath())
 
 	return &App{
-		lines:      []string{""},
-		row:        0,
-		col:        0,
-		width:      80,
-		height:     24,
-		engine:     engine.New(),
-		keymap:     km,
-		showHelp:   false,
-		yankBuffer: "",
-		undoStack:  nil,
-		redoStack:  nil,
+		lines:       []string{""},
+		row:         0,
+		col:         0,
+		width:       80,
+		height:      24,
+		engine:      engine.New(),
+		highlighter: highlight.Default(),
+		keymap:      km,
+		showHelp:    false,
+		yankBuffer:  "",
+		undoStack:   nil,
+		redoStack:   nil,
 	}
+}
+
+// NewAppWithTheme creates a new app with a specific theme
+func NewAppWithTheme(themeName string) *App {
+	app := NewApp()
+	app.highlighter = highlight.NewWithThemeName(themeName)
+	return app
+}
+
+// SetTheme changes the syntax highlighting theme
+func (a *App) SetTheme(themeName string) {
+	a.highlighter.SetTheme(highlight.GetTheme(themeName))
 }
 
 // Init implements tea.Model
@@ -335,7 +351,7 @@ func (a *App) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 
 	case keymap.ActionSave:
 		// TODO: Implement save
-		
+
 	case keymap.ActionSaveQuit:
 		// TODO: Implement save
 		return a, tea.Quit
@@ -859,7 +875,7 @@ func (a *App) View() string {
 			if i == a.row {
 				editorContent = a.renderLineWithCursor(line)
 			} else {
-				editorContent = a.highlightLine(line)
+				editorContent = a.highlighter.Highlight(line)
 			}
 
 			resultContent = a.evaluateLine(line)
@@ -943,25 +959,43 @@ func (a *App) renderLineWithCursor(line string) string {
 		col = len(line)
 	}
 
+	// Cursor at end of line
 	if col == len(line) {
-		return a.highlightLine(line) + cursorStyle.Render(" ")
+		return a.highlighter.Highlight(line) + cursorStyle.Render(" ")
 	}
 
-	before := line[:col]
-	cursorChar := string(line[col])
-	after := line[col+1:]
+	// Get highlighted spans for precise cursor placement
+	spans := a.highlighter.HighlightSpans(line)
 
-	return a.highlightLine(before) + cursorStyle.Render(cursorChar) + a.highlightLine(after)
-}
+	var result strings.Builder
+	cursorRendered := false
 
-func (a *App) highlightLine(line string) string {
-	trimmed := strings.TrimSpace(line)
+	for _, span := range spans {
+		// Check if cursor is within this span
+		if !cursorRendered && col >= span.Start && col < span.End {
+			// Cursor is in this span - split it
+			relativeCol := col - span.Start
+			beforeCursor := span.Text[:relativeCol]
+			cursorChar := string(span.Text[relativeCol])
+			afterCursor := span.Text[relativeCol+1:]
 
-	if strings.HasPrefix(trimmed, "#") || strings.HasPrefix(trimmed, "//") {
-		return commentStyle.Render(line)
+			// Render parts with the span's color
+			style := a.highlighter.Theme().Style(span.Class)
+			if beforeCursor != "" {
+				result.WriteString(style.Render(beforeCursor))
+			}
+			result.WriteString(cursorStyle.Render(cursorChar))
+			if afterCursor != "" {
+				result.WriteString(style.Render(afterCursor))
+			}
+			cursorRendered = true
+		} else {
+			// Render entire span normally
+			result.WriteString(a.highlighter.Theme().Render(span.Class, span.Text))
+		}
 	}
 
-	return line
+	return result.String()
 }
 
 func (a *App) evaluateLine(line string) string {
@@ -1050,6 +1084,14 @@ func RunWithFile(filename, content string) error {
 	if content != "" {
 		app.lines = strings.Split(content, "\n")
 	}
+	p := tea.NewProgram(app, tea.WithAltScreen())
+	_, err := p.Run()
+	return err
+}
+
+// RunWithTheme starts the TUI with a specific theme
+func RunWithTheme(themeName string) error {
+	app := NewAppWithTheme(themeName)
 	p := tea.NewProgram(app, tea.WithAltScreen())
 	_, err := p.Run()
 	return err
