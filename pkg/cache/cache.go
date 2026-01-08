@@ -84,6 +84,38 @@ func NewWithTTL(ttl time.Duration) *RateCache {
 }
 
 // ════════════════════════════════════════════════════════════════
+// CODE RESOLUTION
+// ════════════════════════════════════════════════════════════════
+
+// resolveCode resolves any identifier (alias, symbol, name) to its canonical code.
+// Tries currency, crypto, then metal registries.
+// Returns the uppercase code, or the original string uppercased if not found.
+func resolveCode(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return ""
+	}
+
+	// Try currency first (most common)
+	if code := types.ResolveCurrencyCode(s); code != "" {
+		return code
+	}
+
+	// Try crypto
+	if code := types.ResolveCryptoCode(s); code != "" {
+		return code
+	}
+
+	// Try metal
+	if code := types.ResolveMetalCode(s); code != "" {
+		return code
+	}
+
+	// Fallback: return uppercased original
+	return strings.ToUpper(s)
+}
+
+// ════════════════════════════════════════════════════════════════
 // RATE OPERATIONS
 // ════════════════════════════════════════════════════════════════
 
@@ -92,8 +124,8 @@ func (c *RateCache) SetRate(from, to string, rate float64) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	from = strings.ToUpper(from)
-	to = strings.ToUpper(to)
+	from = resolveCode(from)
+	to = resolveCode(to)
 
 	c.rates[ratePair{From: from, To: to}] = rate
 
@@ -105,12 +137,13 @@ func (c *RateCache) SetRate(from, to string, rate float64) {
 
 // GetRate gets the exchange rate between two currencies.
 // Uses BFS to find conversion path if direct rate not available.
+// Accepts aliases, symbols, or codes (e.g., "lira", "₺", "TRY").
 func (c *RateCache) GetRate(from, to string) (float64, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	from = strings.ToUpper(from)
-	to = strings.ToUpper(to)
+	from = resolveCode(from)
+	to = resolveCode(to)
 
 	// Same currency
 	if from == to {
@@ -721,6 +754,7 @@ func (c *RateCache) Stats() Stats {
 // ════════════════════════════════════════════════════════════════
 
 // Convert converts an amount from one currency to another.
+// Accepts aliases, symbols, or codes (e.g., "lira", "₺", "TRY").
 func (c *RateCache) Convert(amount float64, from, to string) (float64, bool) {
 	rate, ok := c.GetRate(from, to)
 	if !ok {
@@ -730,25 +764,27 @@ func (c *RateCache) Convert(amount float64, from, to string) (float64, bool) {
 }
 
 // ConvertValue converts a types.Value to a target currency/unit.
+// Accepts aliases, symbols, or codes for target (e.g., "lira", "₺", "TRY").
 func (c *RateCache) ConvertValue(v types.Value, target string) (types.Value, bool) {
 	if v.IsError() || v.IsEmpty() {
 		return v, false
 	}
 
-	target = strings.ToUpper(target)
+	// Resolve target to canonical code
+	targetCode := resolveCode(target)
 
 	switch v.Kind {
 	case types.ValueCurrency:
 		if v.Curr == nil {
 			return v, false
 		}
-		converted, ok := c.Convert(v.Num, v.Curr.Code, target)
+		converted, ok := c.Convert(v.Num, v.Curr.Code, targetCode)
 		if !ok {
 			return v, false
 		}
-		targetCurr := types.ParseCurrency(target)
+		targetCurr := types.ParseCurrency(targetCode)
 		if targetCurr == nil {
-			targetCurr = types.CurrencyFromCode(target)
+			targetCurr = types.CurrencyFromCode(targetCode)
 		}
 		return types.CurrencyValue(converted, targetCurr), true
 
@@ -756,15 +792,15 @@ func (c *RateCache) ConvertValue(v types.Value, target string) (types.Value, boo
 		if v.Crypto == nil {
 			return v, false
 		}
-		converted, ok := c.Convert(v.Num, v.Crypto.Code, target)
+		converted, ok := c.Convert(v.Num, v.Crypto.Code, targetCode)
 		if !ok {
 			return v, false
 		}
 		// Target could be currency or crypto
-		if targetCrypto := types.ParseCrypto(target); targetCrypto != nil {
+		if targetCrypto := types.ParseCrypto(targetCode); targetCrypto != nil {
 			return types.CryptoValue(converted, targetCrypto), true
 		}
-		if targetCurr := types.ParseCurrency(target); targetCurr != nil {
+		if targetCurr := types.ParseCurrency(targetCode); targetCurr != nil {
 			return types.CurrencyValue(converted, targetCurr), true
 		}
 		return types.Number(converted), true
@@ -773,11 +809,11 @@ func (c *RateCache) ConvertValue(v types.Value, target string) (types.Value, boo
 		if v.Metal == nil {
 			return v, false
 		}
-		converted, ok := c.Convert(v.Num, v.Metal.Code, target)
+		converted, ok := c.Convert(v.Num, v.Metal.Code, targetCode)
 		if !ok {
 			return v, false
 		}
-		if targetCurr := types.ParseCurrency(target); targetCurr != nil {
+		if targetCurr := types.ParseCurrency(targetCode); targetCurr != nil {
 			return types.CurrencyValue(converted, targetCurr), true
 		}
 		return types.Number(converted), true
