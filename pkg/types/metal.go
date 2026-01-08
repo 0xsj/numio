@@ -1,4 +1,4 @@
-// internal/types/metal.go
+// pkg/types/metal.go
 
 package types
 
@@ -9,7 +9,7 @@ import (
 // Metal represents a precious metal.
 type Metal struct {
 	Code      string   // ISO 4217 code: "XAU", "XAG"
-	Symbol    string   // Display symbol
+	Symbol    string   // Display symbol: "Au", "Ag"
 	Name      string   // Full name: "Gold", "Silver"
 	Aliases   []string // Natural language aliases
 	UnitName  string   // Standard unit: "oz", "gram"
@@ -20,6 +20,10 @@ type Metal struct {
 func (m Metal) String() string {
 	return m.Code
 }
+
+// ════════════════════════════════════════════════════════════════
+// REGISTRY
+// ════════════════════════════════════════════════════════════════
 
 // MetalRegistry holds all known metals.
 type MetalRegistry struct {
@@ -70,6 +74,10 @@ func (r *MetalRegistry) Lookup(s string) *Metal {
 
 	return nil
 }
+
+// ════════════════════════════════════════════════════════════════
+// CURATED METALS
+// ════════════════════════════════════════════════════════════════
 
 // curatedMetals contains precious metals with ISO 4217 codes.
 // These codes are used by financial APIs for metal prices.
@@ -178,6 +186,17 @@ func LookupMetal(s string) *Metal {
 // Returns nil if not found.
 func ParseMetal(s string) *Metal {
 	return metals.Lookup(strings.TrimSpace(s))
+}
+
+// ResolveMetalCode resolves any metal identifier to its ISO code.
+// Accepts codes ("XAU", "xau"), symbols ("Au"), or aliases ("gold", "silver").
+// Returns the uppercase ISO code, or empty string if not found.
+func ResolveMetalCode(s string) string {
+	m := metals.Lookup(strings.TrimSpace(s))
+	if m != nil {
+		return m.Code
+	}
+	return ""
 }
 
 // IsMetal checks if a string refers to a known metal.

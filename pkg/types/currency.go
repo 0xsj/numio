@@ -1,4 +1,4 @@
-// internal/types/currency.go
+// pkg/types/currency.go
 
 // Package types defines core value types for numio.
 package types
@@ -49,8 +49,6 @@ func (c Currency) FormatAmount(amount float64, precision int) string {
 
 // sprintf is a simple float formatter to avoid importing fmt in hot path.
 func sprintf(format string, v float64) string {
-	// For now, use a simple implementation
-	// In production, consider using strconv for performance
 	switch format {
 	case "%.0f":
 		return formatFloat(v, 0)
@@ -119,6 +117,10 @@ func itoa(n int64) string {
 	return string(buf[i:])
 }
 
+// ════════════════════════════════════════════════════════════════
+// REGISTRY
+// ════════════════════════════════════════════════════════════════
+
 // CurrencyRegistry holds all known currencies.
 type CurrencyRegistry struct {
 	byCode   map[string]*Currency
@@ -181,6 +183,10 @@ func (r *CurrencyRegistry) Lookup(s string) *Currency {
 
 	return nil
 }
+
+// ════════════════════════════════════════════════════════════════
+// CURATED CURRENCIES
+// ════════════════════════════════════════════════════════════════
 
 // curatedCurrencies contains well-known currencies with symbols and aliases.
 var curatedCurrencies = []Currency{
@@ -502,6 +508,22 @@ func LookupCurrency(s string) *Currency {
 // Returns nil if not found in curated list.
 func ParseCurrency(s string) *Currency {
 	return currencies.Lookup(strings.TrimSpace(s))
+}
+
+// ResolveCurrencyCode resolves any currency identifier to its ISO 4217 code.
+// Accepts codes ("USD", "usd"), symbols ("$", "€"), or aliases ("dollars", "lira").
+// Returns the uppercase ISO code, or empty string if not found.
+func ResolveCurrencyCode(s string) string {
+	c := currencies.Lookup(strings.TrimSpace(s))
+	if c != nil {
+		return c.Code
+	}
+	return ""
+}
+
+// IsCurrency checks if a string refers to a known currency.
+func IsCurrency(s string) bool {
+	return currencies.Lookup(s) != nil
 }
 
 // CurrencyFromCode creates a dynamic currency from an ISO 4217 code.

@@ -1,4 +1,4 @@
-// internal/types/crypto.go
+// pkg/types/crypto.go
 
 package types
 
@@ -25,6 +25,10 @@ func (c Crypto) String() string {
 func (c Crypto) HasSymbol() bool {
 	return c.Symbol != "" && c.Symbol != c.Code
 }
+
+// ════════════════════════════════════════════════════════════════
+// REGISTRY
+// ════════════════════════════════════════════════════════════════
 
 // CryptoRegistry holds all known cryptocurrencies.
 type CryptoRegistry struct {
@@ -87,6 +91,10 @@ func (r *CryptoRegistry) Lookup(s string) *Crypto {
 
 	return nil
 }
+
+// ════════════════════════════════════════════════════════════════
+// CURATED CRYPTOCURRENCIES
+// ════════════════════════════════════════════════════════════════
 
 // curatedCryptos contains well-known cryptocurrencies.
 var curatedCryptos = []Crypto{
@@ -159,7 +167,7 @@ var curatedCryptos = []Crypto{
 	},
 	{
 		Code:        "SOL",
-		Symbol:      "◎",
+		Symbol:      "SOL",
 		Name:        "Solana",
 		Aliases:     []string{"solana", "sol"},
 		CoingeckoID: "solana",
@@ -175,7 +183,7 @@ var curatedCryptos = []Crypto{
 	},
 	{
 		Code:        "ADA",
-		Symbol:      "₳",
+		Symbol:      "ADA",
 		Name:        "Cardano",
 		Aliases:     []string{"cardano", "ada"},
 		CoingeckoID: "cardano",
@@ -183,7 +191,7 @@ var curatedCryptos = []Crypto{
 	},
 	{
 		Code:        "DOGE",
-		Symbol:      "Ð",
+		Symbol:      "DOGE",
 		Name:        "Dogecoin",
 		Aliases:     []string{"dogecoin", "doge"},
 		CoingeckoID: "dogecoin",
@@ -215,7 +223,7 @@ var curatedCryptos = []Crypto{
 	},
 	{
 		Code:        "LTC",
-		Symbol:      "Ł",
+		Symbol:      "LTC",
 		Name:        "Litecoin",
 		Aliases:     []string{"litecoin", "ltc"},
 		CoingeckoID: "litecoin",
@@ -382,6 +390,17 @@ func LookupCrypto(s string) *Crypto {
 // Returns nil if not found.
 func ParseCrypto(s string) *Crypto {
 	return cryptos.Lookup(strings.TrimSpace(s))
+}
+
+// ResolveCryptoCode resolves any crypto identifier to its ticker code.
+// Accepts codes ("BTC", "btc"), symbols ("₿"), or aliases ("bitcoin", "ether").
+// Returns the uppercase ticker code, or empty string if not found.
+func ResolveCryptoCode(s string) string {
+	c := cryptos.Lookup(strings.TrimSpace(s))
+	if c != nil {
+		return c.Code
+	}
+	return ""
 }
 
 // IsCrypto checks if a string refers to a known cryptocurrency.
