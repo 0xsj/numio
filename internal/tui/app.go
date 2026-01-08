@@ -3,8 +3,10 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/0xsj/numio/internal/highlight"
 	"github.com/0xsj/numio/internal/tui/keymap"
@@ -29,6 +31,12 @@ var (
 	helpKeyStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("#79c0ff")).Width(14)
 	helpDescStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("#888"))
 	helpFooterStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("#666")).Italic(true).MarginTop(1)
+
+	// Rate status styles
+	rateStatusStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("#666"))
+	rateFetchingStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#ffa657"))
+	rateSuccessStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("#7ee787"))
+	rateErrorStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("#f85149"))
 )
 
 // App is the main model
@@ -53,6 +61,10 @@ type App struct {
 	// Undo/Redo
 	undoStack []editorState
 	redoStack []editorState
+
+	// Rate fetch status
+	rateStatus   RateStatusInfo
+	spinnerFrame int
 }
 
 // editorState for undo/redo
@@ -68,18 +80,20 @@ func NewApp() *App {
 	km, _ := keymap.LoadOrCreate(keymap.DefaultConfigPath())
 
 	return &App{
-		lines:       []string{""},
-		row:         0,
-		col:         0,
-		width:       80,
-		height:      24,
-		engine:      engine.New(),
-		highlighter: highlight.Default(),
-		keymap:      km,
-		showHelp:    false,
-		yankBuffer:  "",
-		undoStack:   nil,
-		redoStack:   nil,
+		lines:        []string{""},
+		row:          0,
+		col:          0,
+		width:        80,
+		height:       24,
+		engine:       engine.New(),
+		highlighter:  highlight.Default(),
+		keymap:       km,
+		showHelp:     false,
+		yankBuffer:   "",
+		undoStack:    nil,
+		redoStack:    nil,
+		rateStatus:   RateStatusInfo{Status: RateStatusIdle},
+		spinnerFrame: 0,
 	}
 }
 
@@ -97,7 +111,19 @@ func (a *App) SetTheme(themeName string) {
 
 // Init implements tea.Model
 func (a *App) Init() tea.Cmd {
-	return nil
+	// Start fetching rates on startup
+	a.rateStatus = RateStatusInfo{Status: RateStatusFetching}
+	return tea.Batch(
+		SpinnerTick(),
+		StartRateFetch(a.fetchRates),
+	)
+}
+
+// fetchRates fetches rates with a timeout context.
+func (a *App) fetchRates() (int, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	return a.engine.RefreshRates(ctx)
 }
 
 // Update implements tea.Model
@@ -109,9 +135,53 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyMsg:
 		return a.handleKey(msg)
+
+	// Rate fetch messages
+	case SpinnerTickMsg:
+		if a.rateStatus.Status == RateStatusFetching {
+			a.spinnerFrame++
+			return a, SpinnerTick()
+		}
+
+	case RateFetchDoneMsg:
+		if msg.Err != nil {
+			a.rateStatus = RateStatusInfo{
+				Status:    RateStatusError,
+				Error:     msg.Err,
+				UpdatedAt: time.Now(),
+			}
+		} else {
+			a.rateStatus = RateStatusInfo{
+				Status:    RateStatusSuccess,
+				Message:   formatRateCount(msg.Count),
+				UpdatedAt: time.Now(),
+			}
+		}
+		// Clear success/error message after 3 seconds
+		return a, ClearStatusAfter(3 * time.Second)
+
+	case RateStatusClearMsg:
+		// Only clear if we're in success/error state
+		if a.rateStatus.Status == RateStatusSuccess || a.rateStatus.Status == RateStatusError {
+			a.rateStatus = RateStatusInfo{
+				Status:    RateStatusIdle,
+				UpdatedAt: a.rateStatus.UpdatedAt,
+			}
+		}
 	}
 
 	return a, nil
+}
+
+// formatRateCount formats the rate count for display.
+func formatRateCount(count int) string {
+	if count == 0 {
+		return "Rates up to date"
+	}
+	if count == 1 {
+		return "1 rate updated"
+	}
+	return intToStr(count) + " rates updated"
 }
 
 func (a *App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -120,6 +190,19 @@ func (a *App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Always handle Ctrl+C as force quit
 	if key == "ctrl+c" {
 		return a, tea.Quit
+	}
+
+	// Handle Ctrl+R to refresh rates
+	if key == "ctrl+r" {
+		if a.rateStatus.Status != RateStatusFetching {
+			a.rateStatus = RateStatusInfo{Status: RateStatusFetching}
+			a.spinnerFrame = 0
+			return a, tea.Batch(
+				SpinnerTick(),
+				StartRateFetch(a.fetchRates),
+			)
+		}
+		return a, nil
 	}
 
 	// In insert mode, handle text input specially
@@ -936,6 +1019,7 @@ func (a *App) renderHelp() string {
 	content.WriteString("\n")
 	content.WriteString(helpKeyStyle.Render("Esc") + helpDescStyle.Render("Normal mode") + "\n")
 	content.WriteString(helpKeyStyle.Render("?") + helpDescStyle.Render("Toggle help") + "\n")
+	content.WriteString(helpKeyStyle.Render("Ctrl+r") + helpDescStyle.Render("Refresh rates") + "\n")
 	content.WriteString(helpKeyStyle.Render("q") + helpDescStyle.Render("Quit") + "\n")
 	content.WriteString(helpKeyStyle.Render("Ctrl+C") + helpDescStyle.Render("Force quit") + "\n")
 
@@ -1045,18 +1129,21 @@ func (a *App) renderStatusBar() string {
 		modeStr += " " + pendingStyle.Render(pending)
 	}
 
-	hint := lipgloss.NewStyle().Foreground(lipgloss.Color("#666")).Render("  ? help  ^s save")
+	hint := lipgloss.NewStyle().Foreground(lipgloss.Color("#666")).Render("  ? help  ^s save  ^r rates")
 
 	pos := fmt.Sprintf("%d:%d", a.row+1, a.col+1)
+
+	// Rate status display
+	rateStatusStr := a.renderRateStatus()
 
 	total := a.engine.Total()
 	totalStr := ""
 	if !total.IsEmpty() && total.AsFloat() != 0 {
-		totalStr = resultStyle.Render(fmt.Sprintf("total: %s", total.String())) + "  "
+		totalStr = resultStyle.Render(fmt.Sprintf("Σ %s", total.String())) + "  "
 	}
 
 	left := modeStr + hint
-	right := totalStr + pos
+	right := rateStatusStr + totalStr + pos
 
 	spaces := a.width - lipgloss.Width(left) - lipgloss.Width(right)
 	if spaces < 0 {
@@ -1065,6 +1152,28 @@ func (a *App) renderStatusBar() string {
 
 	statusBg := lipgloss.NewStyle().Background(lipgloss.Color("#1a1a2e"))
 	return statusBg.Render(left + strings.Repeat(" ", spaces) + right)
+}
+
+// renderRateStatus renders the rate status with appropriate styling.
+func (a *App) renderRateStatus() string {
+	statusText := FormatRateStatus(a.rateStatus, a.spinnerFrame)
+	if statusText == "" {
+		return ""
+	}
+
+	var style lipgloss.Style
+	switch a.rateStatus.Status {
+	case RateStatusFetching:
+		style = rateFetchingStyle
+	case RateStatusSuccess:
+		style = rateSuccessStyle
+	case RateStatusError:
+		style = rateErrorStyle
+	default:
+		style = rateStatusStyle
+	}
+
+	return style.Render(statusText) + "  "
 }
 
 // ════════════════════════════════════════════════════════════════

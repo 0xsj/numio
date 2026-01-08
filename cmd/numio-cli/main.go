@@ -338,7 +338,7 @@ Examples:
 
 // printREPLHelp prints REPL help.
 func printREPLHelp() {
-	fmt.Println(`
+	fmt.Print(`
 Commands:
   help, ?          Show this help
   quit, exit, q    Exit the program
