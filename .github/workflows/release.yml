@@ -1,0 +1,117 @@
+# .github/workflows/release.yml
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+env:
+  GO_VERSION: "1.23"
+
+permissions:
+  contents: write
+
+jobs:
+  # ════════════════════════════════════════════════════════════════
+  # RELEASE
+  # ════════════════════════════════════════════════════════════════
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Run tests
+        run: go test -v ./...
+
+      - name: Get version
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Build binaries
+        run: |
+          mkdir -p dist
+
+          # Linux amd64
+          GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w -X main.version=${{ steps.version.outputs.VERSION }}" -o dist/numio-tui-linux-amd64 ./cmd/numio-tui
+          GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w -X main.version=${{ steps.version.outputs.VERSION }}" -o dist/numio-cli-linux-amd64 ./cmd/numio-cli
+
+          # Linux arm64
+          GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w -X main.version=${{ steps.version.outputs.VERSION }}" -o dist/numio-tui-linux-arm64 ./cmd/numio-tui
+          GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w -X main.version=${{ steps.version.outputs.VERSION }}" -o dist/numio-cli-linux-arm64 ./cmd/numio-cli
+
+          # macOS amd64
+          GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w -X main.version=${{ steps.version.outputs.VERSION }}" -o dist/numio-tui-darwin-amd64 ./cmd/numio-tui
+          GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w -X main.version=${{ steps.version.outputs.VERSION }}" -o dist/numio-cli-darwin-amd64 ./cmd/numio-cli
+
+          # macOS arm64 (Apple Silicon)
+          GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w -X main.version=${{ steps.version.outputs.VERSION }}" -o dist/numio-tui-darwin-arm64 ./cmd/numio-tui
+          GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w -X main.version=${{ steps.version.outputs.VERSION }}" -o dist/numio-cli-darwin-arm64 ./cmd/numio-cli
+
+          # Windows amd64
+          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w -X main.version=${{ steps.version.outputs.VERSION }}" -o dist/numio-tui-windows-amd64.exe ./cmd/numio-tui
+          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w -X main.version=${{ steps.version.outputs.VERSION }}" -o dist/numio-cli-windows-amd64.exe ./cmd/numio-cli
+
+      - name: Create checksums
+        run: |
+          cd dist
+          sha256sum * > checksums.txt
+
+      - name: Create archives
+        run: |
+          cd dist
+
+          # Linux
+          tar -czf numio-linux-amd64.tar.gz numio-tui-linux-amd64 numio-cli-linux-amd64
+          tar -czf numio-linux-arm64.tar.gz numio-tui-linux-arm64 numio-cli-linux-arm64
+
+          # macOS
+          tar -czf numio-darwin-amd64.tar.gz numio-tui-darwin-amd64 numio-cli-darwin-amd64
+          tar -czf numio-darwin-arm64.tar.gz numio-tui-darwin-arm64 numio-cli-darwin-arm64
+
+          # Windows
+          zip numio-windows-amd64.zip numio-tui-windows-amd64.exe numio-cli-windows-amd64.exe
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          # Get commits since last tag
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          if [ -z "$PREV_TAG" ]; then
+            CHANGELOG=$(git log --oneline --no-decorate)
+          else
+            CHANGELOG=$(git log --oneline --no-decorate ${PREV_TAG}..HEAD)
+          fi
+
+          # Write to file for release body
+          echo "## What's Changed" > changelog.md
+          echo "" >> changelog.md
+          echo "$CHANGELOG" | while read line; do
+            echo "- $line" >> changelog.md
+          done
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: changelog.md
+          draft: false
+          prerelease: ${{ contains(github.ref, '-rc') || contains(github.ref, '-beta') || contains(github.ref, '-alpha') }}
+          files: |
+            dist/numio-linux-amd64.tar.gz
+            dist/numio-linux-arm64.tar.gz
+            dist/numio-darwin-amd64.tar.gz
+            dist/numio-darwin-arm64.tar.gz
+            dist/numio-windows-amd64.zip
+            dist/checksums.txt
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
