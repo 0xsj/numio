@@ -12,7 +12,32 @@ import (
 // LOGARITHMS & EXPONENTIALS
 // ════════════════════════════════════════════════════════════════
 
-func fnLog2(args []types.Value) types.Value {
+// FnLog returns the natural logarithm.
+func FnLog(args []types.Value) types.Value {
+	if len(args) != 1 {
+		return types.Error("log requires exactly one argument")
+	}
+	x := args[0].AsFloat()
+	if x <= 0 {
+		return types.Errorf("log: argument must be positive, got %v", x)
+	}
+	return types.Number(math.Log(x))
+}
+
+// FnLog10 returns the base-10 logarithm.
+func FnLog10(args []types.Value) types.Value {
+	if len(args) != 1 {
+		return types.Error("log10 requires exactly one argument")
+	}
+	x := args[0].AsFloat()
+	if x <= 0 {
+		return types.Errorf("log10: argument must be positive, got %v", x)
+	}
+	return types.Number(math.Log10(x))
+}
+
+// FnLog2 returns the base-2 logarithm.
+func FnLog2(args []types.Value) types.Value {
 	if len(args) != 1 {
 		return types.Error("log2 requires exactly one argument")
 	}
@@ -23,11 +48,76 @@ func fnLog2(args []types.Value) types.Value {
 	return types.Number(math.Log2(x))
 }
 
+// FnExp returns e^x.
+func FnExp(args []types.Value) types.Value {
+	if len(args) != 1 {
+		return types.Error("exp requires exactly one argument")
+	}
+	return types.Number(math.Exp(args[0].AsFloat()))
+}
+
 // ════════════════════════════════════════════════════════════════
-// TRIGONOMETRIC (additional)
+// TRIGONOMETRIC (radians)
 // ════════════════════════════════════════════════════════════════
 
-func fnAtan2(args []types.Value) types.Value {
+// FnSin returns the sine.
+func FnSin(args []types.Value) types.Value {
+	if len(args) != 1 {
+		return types.Error("sin requires exactly one argument")
+	}
+	return types.Number(math.Sin(args[0].AsFloat()))
+}
+
+// FnCos returns the cosine.
+func FnCos(args []types.Value) types.Value {
+	if len(args) != 1 {
+		return types.Error("cos requires exactly one argument")
+	}
+	return types.Number(math.Cos(args[0].AsFloat()))
+}
+
+// FnTan returns the tangent.
+func FnTan(args []types.Value) types.Value {
+	if len(args) != 1 {
+		return types.Error("tan requires exactly one argument")
+	}
+	return types.Number(math.Tan(args[0].AsFloat()))
+}
+
+// FnAsin returns the arc sine.
+func FnAsin(args []types.Value) types.Value {
+	if len(args) != 1 {
+		return types.Error("asin requires exactly one argument")
+	}
+	x := args[0].AsFloat()
+	if x < -1 || x > 1 {
+		return types.Errorf("asin: argument must be in [-1, 1], got %v", x)
+	}
+	return types.Number(math.Asin(x))
+}
+
+// FnAcos returns the arc cosine.
+func FnAcos(args []types.Value) types.Value {
+	if len(args) != 1 {
+		return types.Error("acos requires exactly one argument")
+	}
+	x := args[0].AsFloat()
+	if x < -1 || x > 1 {
+		return types.Errorf("acos: argument must be in [-1, 1], got %v", x)
+	}
+	return types.Number(math.Acos(x))
+}
+
+// FnAtan returns the arc tangent.
+func FnAtan(args []types.Value) types.Value {
+	if len(args) != 1 {
+		return types.Error("atan requires exactly one argument")
+	}
+	return types.Number(math.Atan(args[0].AsFloat()))
+}
+
+// FnAtan2 returns the arc tangent of y/x.
+func FnAtan2(args []types.Value) types.Value {
 	if len(args) != 2 {
 		return types.Error("atan2 requires exactly two arguments")
 	}
@@ -40,35 +130,40 @@ func fnAtan2(args []types.Value) types.Value {
 // HYPERBOLIC
 // ════════════════════════════════════════════════════════════════
 
-func fnSinh(args []types.Value) types.Value {
+// FnSinh returns the hyperbolic sine.
+func FnSinh(args []types.Value) types.Value {
 	if len(args) != 1 {
 		return types.Error("sinh requires exactly one argument")
 	}
 	return types.Number(math.Sinh(args[0].AsFloat()))
 }
 
-func fnCosh(args []types.Value) types.Value {
+// FnCosh returns the hyperbolic cosine.
+func FnCosh(args []types.Value) types.Value {
 	if len(args) != 1 {
 		return types.Error("cosh requires exactly one argument")
 	}
 	return types.Number(math.Cosh(args[0].AsFloat()))
 }
 
-func fnTanh(args []types.Value) types.Value {
+// FnTanh returns the hyperbolic tangent.
+func FnTanh(args []types.Value) types.Value {
 	if len(args) != 1 {
 		return types.Error("tanh requires exactly one argument")
 	}
 	return types.Number(math.Tanh(args[0].AsFloat()))
 }
 
-func fnAsinh(args []types.Value) types.Value {
+// FnAsinh returns the inverse hyperbolic sine.
+func FnAsinh(args []types.Value) types.Value {
 	if len(args) != 1 {
 		return types.Error("asinh requires exactly one argument")
 	}
 	return types.Number(math.Asinh(args[0].AsFloat()))
 }
 
-func fnAcosh(args []types.Value) types.Value {
+// FnAcosh returns the inverse hyperbolic cosine.
+func FnAcosh(args []types.Value) types.Value {
 	if len(args) != 1 {
 		return types.Error("acosh requires exactly one argument")
 	}
@@ -79,7 +174,8 @@ func fnAcosh(args []types.Value) types.Value {
 	return types.Number(math.Acosh(x))
 }
 
-func fnAtanh(args []types.Value) types.Value {
+// FnAtanh returns the inverse hyperbolic tangent.
+func FnAtanh(args []types.Value) types.Value {
 	if len(args) != 1 {
 		return types.Error("atanh requires exactly one argument")
 	}
@@ -94,7 +190,8 @@ func fnAtanh(args []types.Value) types.Value {
 // ANGLE CONVERSION
 // ════════════════════════════════════════════════════════════════
 
-func fnDeg(args []types.Value) types.Value {
+// FnDeg converts radians to degrees.
+func FnDeg(args []types.Value) types.Value {
 	if len(args) != 1 {
 		return types.Error("deg requires exactly one argument")
 	}
@@ -102,7 +199,8 @@ func fnDeg(args []types.Value) types.Value {
 	return types.Number(radians * 180.0 / math.Pi)
 }
 
-func fnRad(args []types.Value) types.Value {
+// FnRad converts degrees to radians.
+func FnRad(args []types.Value) types.Value {
 	if len(args) != 1 {
 		return types.Error("rad requires exactly one argument")
 	}
@@ -114,7 +212,8 @@ func fnRad(args []types.Value) types.Value {
 // COMBINATORICS
 // ════════════════════════════════════════════════════════════════
 
-func fnFactorial(args []types.Value) types.Value {
+// FnFactorial returns n!
+func FnFactorial(args []types.Value) types.Value {
 	if len(args) != 1 {
 		return types.Error("factorial requires exactly one argument")
 	}
@@ -138,7 +237,8 @@ func fnFactorial(args []types.Value) types.Value {
 	return types.Number(result)
 }
 
-func fnPermutations(args []types.Value) types.Value {
+// FnPermutations returns nPr (permutations).
+func FnPermutations(args []types.Value) types.Value {
 	if len(args) != 2 {
 		return types.Error("nPr requires exactly two arguments")
 	}
@@ -147,10 +247,10 @@ func fnPermutations(args []types.Value) types.Value {
 	r := args[1].AsFloat()
 
 	if n < 0 || r < 0 {
-		return types.Errorf("nPr: arguments must be non-negative")
+		return types.Error("nPr: arguments must be non-negative")
 	}
 	if n != math.Floor(n) || r != math.Floor(r) {
-		return types.Errorf("nPr: arguments must be integers")
+		return types.Error("nPr: arguments must be integers")
 	}
 	if r > n {
 		return types.Number(0)
@@ -164,7 +264,8 @@ func fnPermutations(args []types.Value) types.Value {
 	return types.Number(result)
 }
 
-func fnCombinations(args []types.Value) types.Value {
+// FnCombinations returns nCr (combinations).
+func FnCombinations(args []types.Value) types.Value {
 	if len(args) != 2 {
 		return types.Error("nCr requires exactly two arguments")
 	}
@@ -173,10 +274,10 @@ func fnCombinations(args []types.Value) types.Value {
 	r := args[1].AsFloat()
 
 	if n < 0 || r < 0 {
-		return types.Errorf("nCr: arguments must be non-negative")
+		return types.Error("nCr: arguments must be non-negative")
 	}
 	if n != math.Floor(n) || r != math.Floor(r) {
-		return types.Errorf("nCr: arguments must be integers")
+		return types.Error("nCr: arguments must be integers")
 	}
 	if r > n {
 		return types.Number(0)
@@ -199,7 +300,8 @@ func fnCombinations(args []types.Value) types.Value {
 // NUMBER THEORY
 // ════════════════════════════════════════════════════════════════
 
-func fnGCD(args []types.Value) types.Value {
+// FnGCD returns the greatest common divisor.
+func FnGCD(args []types.Value) types.Value {
 	if len(args) < 2 {
 		return types.Error("gcd requires at least two arguments")
 	}
@@ -212,7 +314,8 @@ func fnGCD(args []types.Value) types.Value {
 	return types.Number(float64(result))
 }
 
-func fnLCM(args []types.Value) types.Value {
+// FnLCM returns the least common multiple.
+func FnLCM(args []types.Value) types.Value {
 	if len(args) < 2 {
 		return types.Error("lcm requires at least two arguments")
 	}
@@ -225,7 +328,8 @@ func fnLCM(args []types.Value) types.Value {
 	return types.Number(float64(result))
 }
 
-func fnMod(args []types.Value) types.Value {
+// FnMod returns the modulo.
+func FnMod(args []types.Value) types.Value {
 	if len(args) != 2 {
 		return types.Error("mod requires exactly two arguments")
 	}
@@ -257,7 +361,8 @@ func lcm(a, b int64) int64 {
 // ROUNDING & SIGN
 // ════════════════════════════════════════════════════════════════
 
-func fnSign(args []types.Value) types.Value {
+// FnSign returns the sign of a number (-1, 0, or 1).
+func FnSign(args []types.Value) types.Value {
 	if len(args) != 1 {
 		return types.Error("sign requires exactly one argument")
 	}
@@ -271,14 +376,16 @@ func fnSign(args []types.Value) types.Value {
 	return types.Number(0)
 }
 
-func fnTrunc(args []types.Value) types.Value {
+// FnTrunc truncates toward zero.
+func FnTrunc(args []types.Value) types.Value {
 	if len(args) != 1 {
 		return types.Error("trunc requires exactly one argument")
 	}
 	return types.Number(math.Trunc(args[0].AsFloat()))
 }
 
-func fnFrac(args []types.Value) types.Value {
+// FnFrac returns the fractional part.
+func FnFrac(args []types.Value) types.Value {
 	if len(args) != 1 {
 		return types.Error("frac requires exactly one argument")
 	}
@@ -288,10 +395,11 @@ func fnFrac(args []types.Value) types.Value {
 }
 
 // ════════════════════════════════════════════════════════════════
-// SPECIAL
+// SPECIAL FUNCTIONS
 // ════════════════════════════════════════════════════════════════
 
-func fnHypot(args []types.Value) types.Value {
+// FnHypot returns sqrt(x^2 + y^2).
+func FnHypot(args []types.Value) types.Value {
 	if len(args) != 2 {
 		return types.Error("hypot requires exactly two arguments")
 	}
@@ -300,7 +408,8 @@ func fnHypot(args []types.Value) types.Value {
 	return types.Number(math.Hypot(x, y))
 }
 
-func fnCbrt(args []types.Value) types.Value {
+// FnCbrt returns the cube root.
+func FnCbrt(args []types.Value) types.Value {
 	if len(args) != 1 {
 		return types.Error("cbrt requires exactly one argument")
 	}

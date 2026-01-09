@@ -1,0 +1,186 @@
+// internal/eval/functions.go
+
+package eval
+
+import (
+	"strings"
+
+	"github.com/0xsj/numio/pkg/types"
+)
+
+// FunctionHandler is the signature for function implementations.
+type FunctionHandler func(args []types.Value) types.Value
+
+// FunctionDef defines a function's metadata and handler.
+type FunctionDef struct {
+	Name     string
+	MinArgs  int
+	MaxArgs  int // -1 for variadic
+	Variadic bool
+	Handler  FunctionHandler
+}
+
+// FunctionRegistry holds all registered functions.
+var FunctionRegistry = map[string]FunctionDef{}
+
+func init() {
+	// Register all functions
+	registerCoreFunctions()
+	registerMathFunctions()
+}
+
+// ════════════════════════════════════════════════════════════════
+// FUNCTION DISPATCH
+// ════════════════════════════════════════════════════════════════
+
+// CallFunction looks up and calls a function by name.
+func CallFunction(name string, args []types.Value) types.Value {
+	name = strings.ToLower(name)
+
+	fn, ok := FunctionRegistry[name]
+	if !ok {
+		return types.Errorf("unknown function: %s", name)
+	}
+
+	// Validate argument count
+	if err := validateArgs(fn, args); err.IsError() {
+		return err
+	}
+
+	return fn.Handler(args)
+}
+
+// HasFunction checks if a function exists.
+func HasFunction(name string) bool {
+	_, ok := FunctionRegistry[strings.ToLower(name)]
+	return ok
+}
+
+// GetFunction returns a function definition.
+func GetFunction(name string) (FunctionDef, bool) {
+	fn, ok := FunctionRegistry[strings.ToLower(name)]
+	return fn, ok
+}
+
+// ListFunctions returns all registered function names.
+func ListFunctions() []string {
+	names := make([]string, 0, len(FunctionRegistry))
+	for name := range FunctionRegistry {
+		names = append(names, name)
+	}
+	return names
+}
+
+// ════════════════════════════════════════════════════════════════
+// ARGUMENT VALIDATION
+// ════════════════════════════════════════════════════════════════
+
+func validateArgs(fn FunctionDef, args []types.Value) types.Value {
+	argc := len(args)
+
+	if argc < fn.MinArgs {
+		if fn.MinArgs == fn.MaxArgs {
+			return types.Errorf("%s requires exactly %d argument(s), got %d", fn.Name, fn.MinArgs, argc)
+		}
+		return types.Errorf("%s requires at least %d argument(s), got %d", fn.Name, fn.MinArgs, argc)
+	}
+
+	if !fn.Variadic && fn.MaxArgs >= 0 && argc > fn.MaxArgs {
+		if fn.MinArgs == fn.MaxArgs {
+			return types.Errorf("%s requires exactly %d argument(s), got %d", fn.Name, fn.MaxArgs, argc)
+		}
+		return types.Errorf("%s requires at most %d argument(s), got %d", fn.Name, fn.MaxArgs, argc)
+	}
+
+	// Return empty value (not error) on success
+	return types.Empty()
+}
+
+// ════════════════════════════════════════════════════════════════
+// CORE FUNCTION REGISTRATION
+// ════════════════════════════════════════════════════════════════
+
+func registerCoreFunctions() {
+	// Aggregation
+	register("sum", 0, -1, true, FnSum)
+	register("avg", 1, -1, true, FnAvg)
+	register("average", 1, -1, true, FnAvg)
+	register("mean", 1, -1, true, FnAvg)
+	register("min", 1, -1, true, FnMin)
+	register("max", 1, -1, true, FnMax)
+	register("count", 0, -1, true, FnCount)
+
+	// Basic math
+	register("abs", 1, 1, false, FnAbs)
+	register("sqrt", 1, 1, false, FnSqrt)
+	register("cbrt", 1, 1, false, FnCbrt)
+	register("round", 1, 2, false, FnRound)
+	register("floor", 1, 1, false, FnFloor)
+	register("ceil", 1, 1, false, FnCeil)
+	register("pow", 2, 2, false, FnPow)
+}
+
+// ════════════════════════════════════════════════════════════════
+// MATH FUNCTION REGISTRATION
+// ════════════════════════════════════════════════════════════════
+
+func registerMathFunctions() {
+	// Logarithms & exponentials
+	register("log", 1, 1, false, FnLog)
+	register("ln", 1, 1, false, FnLog)
+	register("log10", 1, 1, false, FnLog10)
+	register("log2", 1, 1, false, FnLog2)
+	register("exp", 1, 1, false, FnExp)
+
+	// Trigonometric
+	register("sin", 1, 1, false, FnSin)
+	register("cos", 1, 1, false, FnCos)
+	register("tan", 1, 1, false, FnTan)
+	register("asin", 1, 1, false, FnAsin)
+	register("acos", 1, 1, false, FnAcos)
+	register("atan", 1, 1, false, FnAtan)
+	register("atan2", 2, 2, false, FnAtan2)
+
+	// Hyperbolic
+	register("sinh", 1, 1, false, FnSinh)
+	register("cosh", 1, 1, false, FnCosh)
+	register("tanh", 1, 1, false, FnTanh)
+	register("asinh", 1, 1, false, FnAsinh)
+	register("acosh", 1, 1, false, FnAcosh)
+	register("atanh", 1, 1, false, FnAtanh)
+
+	// Angle conversion
+	register("deg", 1, 1, false, FnDeg)
+	register("rad", 1, 1, false, FnRad)
+
+	// Combinatorics
+	register("factorial", 1, 1, false, FnFactorial)
+	register("npr", 2, 2, false, FnPermutations)
+	register("ncr", 2, 2, false, FnCombinations)
+	register("perm", 2, 2, false, FnPermutations)
+	register("comb", 2, 2, false, FnCombinations)
+
+	// Number theory
+	register("gcd", 2, -1, true, FnGCD)
+	register("lcm", 2, -1, true, FnLCM)
+	register("mod", 2, 2, false, FnMod)
+
+	// Rounding & sign
+	register("sign", 1, 1, false, FnSign)
+	register("trunc", 1, 1, false, FnTrunc)
+	register("frac", 1, 1, false, FnFrac)
+
+	// Special
+	register("hypot", 2, 2, false, FnHypot)
+}
+
+// register is a helper to add functions to the registry.
+func register(name string, minArgs, maxArgs int, variadic bool, handler FunctionHandler) {
+	FunctionRegistry[name] = FunctionDef{
+		Name:     name,
+		MinArgs:  minArgs,
+		MaxArgs:  maxArgs,
+		Variadic: variadic,
+		Handler:  handler,
+	}
+}

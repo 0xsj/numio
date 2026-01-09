@@ -3,7 +3,6 @@
 package eval
 
 import (
-	"math"
 	"strings"
 
 	"github.com/0xsj/numio/internal/ast"
@@ -169,10 +168,10 @@ func (e *Evaluator) evalExpr(expr ast.Expr) types.Value {
 
 	// Continuations
 	case *ast.ContinuationExpr:
-		return e.evalContinuation(ex)
+		return EvalContinuation(ex, e.evalExpr, e.ctx)
 
 	case *ast.ConversionContinuation:
-		return e.evalConversionContinuation(ex)
+		return EvalConversionContinuation(ex, e.ctx)
 
 	default:
 		return types.Error("unknown expression type")
@@ -184,6 +183,12 @@ func (e *Evaluator) evalExpr(expr ast.Expr) types.Value {
 // ════════════════════════════════════════════════════════════════
 
 func (e *Evaluator) evalIdentifier(id *ast.Identifier) types.Value {
+	// Check for math constants first
+	if val, ok := GetMathConstant(id.Name); ok {
+		return types.Number(val)
+	}
+
+	// Check for variables
 	value, ok := e.ctx.GetVariable(id.Name)
 	if !ok {
 		if e.ctx.IsStrict() {
@@ -210,135 +215,7 @@ func (e *Evaluator) evalBinary(expr *ast.BinaryExpr) types.Value {
 		return right
 	}
 
-	return e.applyBinaryOp(expr.Op, left, right)
-}
-
-func (e *Evaluator) applyBinaryOp(op ast.BinaryOp, left, right types.Value) types.Value {
-	// Handle percentage operations specially
-	if right.IsPercentage() && (op == ast.OpAdd || op == ast.OpSub) {
-		return e.applyPercentageOp(op, left, right)
-	}
-
-	// Get numeric values
-	leftNum := left.AsFloat()
-	rightNum := right.AsFloat()
-
-	// For percentages used in multiplication/division, use decimal value
-	if right.IsPercentage() && (op == ast.OpMul || op == ast.OpDiv) {
-		rightNum = right.Num
-	}
-	if left.IsPercentage() && (op == ast.OpMul || op == ast.OpDiv) {
-		leftNum = left.Num
-	}
-
-	var result float64
-
-	switch op {
-	case ast.OpAdd:
-		result = leftNum + rightNum
-	case ast.OpSub:
-		result = leftNum - rightNum
-	case ast.OpMul:
-		result = leftNum * rightNum
-	case ast.OpDiv:
-		if rightNum == 0 {
-			return types.Error("division by zero")
-		}
-		result = leftNum / rightNum
-	case ast.OpPow:
-		result = math.Pow(leftNum, rightNum)
-	case ast.OpMod:
-		if rightNum == 0 {
-			return types.Error("modulo by zero")
-		}
-		result = math.Mod(leftNum, rightNum)
-	default:
-		return types.Error("unknown operator")
-	}
-
-	// Determine result type based on operands
-	return e.coerceResult(result, left, right, op)
-}
-
-// applyPercentageOp handles "value + percentage" and "value - percentage"
-// e.g., 100 + 15% = 115, $50 - 10% = $45
-func (e *Evaluator) applyPercentageOp(op ast.BinaryOp, left, right types.Value) types.Value {
-	baseValue := left.AsFloat()
-	percentage := right.Num // Already in decimal form (0.15 for 15%)
-
-	var result float64
-	if op == ast.OpAdd {
-		result = baseValue * (1 + percentage)
-	} else { // OpSub
-		result = baseValue * (1 - percentage)
-	}
-
-	// Preserve the left operand's type
-	return left.WithAmount(result)
-}
-
-// coerceResult determines the result type based on operands.
-func (e *Evaluator) coerceResult(result float64, left, right types.Value, op ast.BinaryOp) types.Value {
-	// For multiplication/division, special handling
-	if op == ast.OpMul || op == ast.OpDiv {
-		// If one is a plain number, inherit the other's type
-		if left.IsNumber() && !right.IsNumber() {
-			return right.WithAmount(result)
-		}
-		if right.IsNumber() && !left.IsNumber() {
-			return left.WithAmount(result)
-		}
-		// Both typed - return plain number (or could be unit algebra in future)
-		if !left.IsNumber() && !right.IsNumber() {
-			return types.Number(result)
-		}
-	}
-
-	// For addition/subtraction, types must be compatible
-	if op == ast.OpAdd || op == ast.OpSub {
-		// Same type - preserve it
-		if left.Kind == right.Kind {
-			return left.WithAmount(result)
-		}
-
-		// One is a plain number - inherit the typed one
-		if left.IsNumber() {
-			return right.WithAmount(result)
-		}
-		if right.IsNumber() {
-			return left.WithAmount(result)
-		}
-
-		// Different typed values - need conversion
-		// For currencies, convert right to left's currency
-		if left.IsCurrency() && right.IsCurrency() {
-			if left.Curr != nil && right.Curr != nil {
-				converted, ok := e.ctx.Convert(right.Num, right.Curr.Code, left.Curr.Code)
-				if ok {
-					if op == ast.OpAdd {
-						return left.WithAmount(left.Num + converted)
-					}
-					return left.WithAmount(left.Num - converted)
-				}
-			}
-		}
-
-		// For units, convert right to left's unit
-		if left.IsUnit() && right.IsUnit() {
-			if left.Unit != nil && right.Unit != nil {
-				converted, ok := right.Unit.ConvertTo(right.Num, left.Unit)
-				if ok {
-					if op == ast.OpAdd {
-						return left.WithAmount(left.Num + converted)
-					}
-					return left.WithAmount(left.Num - converted)
-				}
-			}
-			return types.Error("incompatible units")
-		}
-	}
-
-	return types.Number(result)
+	return ApplyBinaryOp(expr.Op, left, right, e.ctx)
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -351,14 +228,7 @@ func (e *Evaluator) evalUnary(expr *ast.UnaryExpr) types.Value {
 		return value
 	}
 
-	switch expr.Op {
-	case ast.OpNeg:
-		return value.Negate()
-	case ast.OpPos:
-		return value
-	default:
-		return types.Error("unknown unary operator")
-	}
+	return ApplyUnaryOp(expr.Op, value)
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -398,67 +268,7 @@ func (e *Evaluator) evalConversion(expr *ast.ConversionExpr) types.Value {
 		return value
 	}
 
-	return e.convertValue(value, expr.Target)
-}
-
-func (e *Evaluator) convertValue(value types.Value, target string) types.Value {
-	// Try unit conversion first
-	if value.IsUnit() && value.Unit != nil {
-		targetUnit := types.ParseUnit(target)
-		if targetUnit != nil {
-			converted, ok := value.Unit.ConvertTo(value.Num, targetUnit)
-			if ok {
-				return types.UnitValue(converted, targetUnit)
-			}
-			return types.Errorf("cannot convert %s to %s", value.Unit.Code, target)
-		}
-	}
-
-	// Try currency/crypto conversion
-	converted, ok := e.ctx.ConvertValue(value, target)
-	if ok {
-		return converted
-	}
-
-	// Check if target is valid but conversion unavailable
-	if types.ParseCurrency(target) != nil || types.ParseCrypto(target) != nil {
-		return types.Errorf("no rate available for conversion to %s", target)
-	}
-	if types.ParseUnit(target) != nil {
-		return types.Errorf("cannot convert to %s (incompatible types)", target)
-	}
-
-	return types.Errorf("unknown target: %s", target)
-}
-
-// ════════════════════════════════════════════════════════════════
-// CONTINUATIONS
-// ════════════════════════════════════════════════════════════════
-
-// evalContinuation handles "+ 10", "* 2" etc. continuing from previous.
-func (e *Evaluator) evalContinuation(expr *ast.ContinuationExpr) types.Value {
-	if !e.ctx.HasPrevious() {
-		// No previous - evaluate expression alone
-		return e.evalExpr(expr.Expr)
-	}
-
-	prev := e.ctx.Previous()
-	right := e.evalExpr(expr.Expr)
-	if right.IsError() {
-		return right
-	}
-
-	return e.applyBinaryOp(expr.Op, prev, right)
-}
-
-// evalConversionContinuation handles "in EUR", "to miles" continuing from previous.
-func (e *Evaluator) evalConversionContinuation(expr *ast.ConversionContinuation) types.Value {
-	if !e.ctx.HasPrevious() {
-		return types.Error("no previous value to convert")
-	}
-
-	prev := e.ctx.Previous()
-	return e.convertValue(prev, expr.Target)
+	return ConvertValue(value, expr.Target, e.ctx)
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -478,172 +288,5 @@ func (e *Evaluator) evalCall(expr *ast.CallExpr) types.Value {
 
 	// Look up and call function
 	name := strings.ToLower(expr.Name)
-	return e.callFunction(name, args)
-}
-
-func (e *Evaluator) callFunction(name string, args []types.Value) types.Value {
-	switch name {
-	// Aggregation functions
-	case "sum":
-		return e.fnSum(args)
-	case "avg", "average", "mean":
-		return e.fnAvg(args)
-	case "min":
-		return e.fnMin(args)
-	case "max":
-		return e.fnMax(args)
-	case "count":
-		return types.Number(float64(len(args)))
-
-	// Math functions
-	case "abs":
-		return e.fnUnary(args, math.Abs)
-	case "sqrt":
-		return e.fnUnary(args, math.Sqrt)
-	case "round":
-		return e.fnUnary(args, math.Round)
-	case "floor":
-		return e.fnUnary(args, math.Floor)
-	case "ceil":
-		return e.fnUnary(args, math.Ceil)
-	case "log", "log10":
-		return e.fnUnary(args, math.Log10)
-	case "ln":
-		return e.fnUnary(args, math.Log)
-	case "exp":
-		return e.fnUnary(args, math.Exp)
-	case "sin":
-		return e.fnUnary(args, math.Sin)
-	case "cos":
-		return e.fnUnary(args, math.Cos)
-	case "tan":
-		return e.fnUnary(args, math.Tan)
-	case "asin":
-		return e.fnUnary(args, math.Asin)
-	case "acos":
-		return e.fnUnary(args, math.Acos)
-	case "atan":
-		return e.fnUnary(args, math.Atan)
-
-	// Power function (2 args)
-	case "pow":
-		return e.fnPow(args)
-
-	default:
-		return types.Errorf("unknown function: %s", name)
-	}
-}
-
-// ════════════════════════════════════════════════════════════════
-// BUILT-IN FUNCTIONS
-// ════════════════════════════════════════════════════════════════
-
-func (e *Evaluator) fnSum(args []types.Value) types.Value {
-	if len(args) == 0 {
-		return types.Number(0)
-	}
-
-	var total float64
-	var resultType types.Value = args[0]
-
-	for _, arg := range args {
-		if arg.IsError() {
-			return arg
-		}
-		total += arg.AsFloat()
-	}
-
-	return resultType.WithAmount(total)
-}
-
-func (e *Evaluator) fnAvg(args []types.Value) types.Value {
-	if len(args) == 0 {
-		return types.Number(0)
-	}
-
-	sum := e.fnSum(args)
-	if sum.IsError() {
-		return sum
-	}
-
-	return sum.WithAmount(sum.AsFloat() / float64(len(args)))
-}
-
-func (e *Evaluator) fnMin(args []types.Value) types.Value {
-	if len(args) == 0 {
-		return types.Error("min requires at least one argument")
-	}
-
-	minVal := args[0]
-	minNum := minVal.AsFloat()
-
-	for _, arg := range args[1:] {
-		if arg.IsError() {
-			return arg
-		}
-		if arg.AsFloat() < minNum {
-			minNum = arg.AsFloat()
-			minVal = arg
-		}
-	}
-
-	return minVal.WithAmount(minNum)
-}
-
-func (e *Evaluator) fnMax(args []types.Value) types.Value {
-	if len(args) == 0 {
-		return types.Error("max requires at least one argument")
-	}
-
-	maxVal := args[0]
-	maxNum := maxVal.AsFloat()
-
-	for _, arg := range args[1:] {
-		if arg.IsError() {
-			return arg
-		}
-		if arg.AsFloat() > maxNum {
-			maxNum = arg.AsFloat()
-			maxVal = arg
-		}
-	}
-
-	return maxVal.WithAmount(maxNum)
-}
-
-func (e *Evaluator) fnUnary(args []types.Value, fn func(float64) float64) types.Value {
-	if len(args) != 1 {
-		return types.Error("function requires exactly one argument")
-	}
-
-	arg := args[0]
-	if arg.IsError() {
-		return arg
-	}
-
-	result := fn(arg.AsFloat())
-
-	// Check for NaN/Inf
-	if math.IsNaN(result) || math.IsInf(result, 0) {
-		return types.Error("invalid result")
-	}
-
-	return types.Number(result)
-}
-
-func (e *Evaluator) fnPow(args []types.Value) types.Value {
-	if len(args) != 2 {
-		return types.Error("pow requires exactly two arguments")
-	}
-
-	base := args[0].AsFloat()
-	exp := args[1].AsFloat()
-
-	result := math.Pow(base, exp)
-
-	if math.IsNaN(result) || math.IsInf(result, 0) {
-		return types.Error("invalid result")
-	}
-
-	return types.Number(result)
+	return CallFunction(name, args)
 }
