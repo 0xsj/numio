@@ -27,6 +27,7 @@ func init() {
 	// Register all functions
 	registerCoreFunctions()
 	registerMathFunctions()
+	registerGraphFunctions()
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -172,6 +173,25 @@ func registerMathFunctions() {
 
 	// Special
 	register("hypot", 2, 2, false, FnHypot)
+}
+
+// ════════════════════════════════════════════════════════════════
+// GRAPH FUNCTION REGISTRATION
+// ════════════════════════════════════════════════════════════════
+
+func registerGraphFunctions() {
+	// Sparklines
+	register("spark", 1, -1, true, FnSparkline)
+	register("sparkline", 1, -1, true, FnSparkline)
+	register("sparkstats", 1, -1, true, FnSparklineStats)
+	register("sparktrend", 1, -1, true, FnSparklineTrend)
+	register("sparkstyle", 2, -1, true, FnSparklineStyled)
+	register("sparkbound", 3, -1, true, FnSparklineBounded)
+	register("sparkwidth", 2, -1, true, FnSparklineFixed)
+
+	// Bars
+	register("bar", 1, 2, false, FnBar)
+	register("progress", 1, 2, false, FnProgress)
 }
 
 // register is a helper to add functions to the registry.

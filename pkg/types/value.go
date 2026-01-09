@@ -1,4 +1,4 @@
-// internal/types/value.go
+// pkg/types/value.go
 
 package types
 
@@ -17,6 +17,7 @@ const (
 	ValueWithUnit                    // Value with unit: 5 km, 2 hours
 	ValueMetal                       // Precious metal: 1 oz gold
 	ValueCrypto                      // Cryptocurrency: 0.5 BTC
+	ValueString                      // String value: sparklines, text
 	ValueError                       // Error during evaluation
 )
 
@@ -37,6 +38,8 @@ func (k ValueKind) String() string {
 		return "metal"
 	case ValueCrypto:
 		return "crypto"
+	case ValueString:
+		return "string"
 	case ValueError:
 		return "error"
 	default:
@@ -51,6 +54,9 @@ type Value struct {
 
 	// Numeric value (used by all numeric kinds)
 	Num float64
+
+	// String value (for ValueString)
+	Str string
 
 	// Type-specific data
 	Curr   *Currency // For ValueCurrency
@@ -129,6 +135,14 @@ func CryptoValue(amount float64, crypto *Crypto) Value {
 		Kind:   ValueCrypto,
 		Num:    amount,
 		Crypto: crypto,
+	}
+}
+
+// StringValue creates a string value.
+func StringValue(s string) Value {
+	return Value{
+		Kind: ValueString,
+		Str:  s,
 	}
 }
 
@@ -227,6 +241,11 @@ func (v Value) IsCrypto() bool {
 	return v.Kind == ValueCrypto
 }
 
+// IsString returns true if the value is a string.
+func (v Value) IsString() bool {
+	return v.Kind == ValueString
+}
+
 // ════════════════════════════════════════════════════════════════
 // ACCESSORS
 // ════════════════════════════════════════════════════════════════
@@ -235,6 +254,15 @@ func (v Value) IsCrypto() bool {
 // Returns 0 for non-numeric values.
 func (v Value) AsFloat() float64 {
 	return v.Num
+}
+
+// AsString returns the string value.
+// Returns empty string for non-string values.
+func (v Value) AsString() string {
+	if v.Kind == ValueString {
+		return v.Str
+	}
+	return v.String()
 }
 
 // AsPercentageDisplay returns the percentage in display form (e.g., 20 for 20%).
@@ -317,6 +345,9 @@ func (v Value) String() string {
 			return formatCrypto(v.Num, v.Crypto)
 		}
 		return formatNumber(v.Num)
+
+	case ValueString:
+		return v.Str
 
 	case ValueError:
 		return "Error: " + v.Err
@@ -429,6 +460,11 @@ func (v Value) CanCombineWith(other Value) bool {
 		return false
 	}
 
+	// Strings can't combine with arithmetic
+	if v.IsString() || other.IsString() {
+		return false
+	}
+
 	// Percentages can combine with anything numeric
 	if v.IsPercentage() || other.IsPercentage() {
 		return true
@@ -529,6 +565,9 @@ func (v Value) ToMap() map[string]any {
 			m["crypto"] = v.Crypto.Code
 			m["name"] = v.Crypto.Name
 		}
+
+	case ValueString:
+		m["value"] = v.Str
 
 	case ValueError:
 		m["error"] = v.Err
