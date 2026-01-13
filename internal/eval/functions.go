@@ -29,6 +29,7 @@ func init() {
 	registerMathFunctions()
 	registerGraphFunctions()
 	registerStatsFunctions()
+	registerFinanceFunctions()
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -284,6 +285,58 @@ func registerStatsFunctions() {
 	// Other
 	register("product", 1, -1, true, FnProduct)
 	register("prod", 1, -1, true, FnProduct)
+}
+
+// ════════════════════════════════════════════════════════════════
+// FINANCE FUNCTION REGISTRATION
+// ════════════════════════════════════════════════════════════════
+
+func registerFinanceFunctions() {
+	// Interest
+	register("simple", 3, 3, false, FnSimpleInterest)
+	register("compound", 3, 4, false, FnCompoundInterest)
+	register("apy", 2, 2, false, FnAPY)
+	register("apr", 2, 2, false, FnAPR)
+	register("rule72", 1, 1, false, FnRule72)
+	register("effectiverate", 2, 2, false, FnEffectiveRate)
+	register("realrate", 2, 2, false, FnRealRate)
+
+	// Time value of money
+	register("pv", 3, 3, false, FnPV)
+	register("fv", 3, 3, false, FnFV)
+	register("pmt", 3, 3, false, FnPMT)
+	register("nper", 3, 3, false, FnNPER)
+	register("npv", 2, -1, true, FnNPV)
+	register("irr", 2, -1, true, FnIRR)
+	register("mirr", 4, -1, true, FnMIRR)
+
+	// Loan
+	register("loan", 3, 3, false, FnLoan)
+	register("mortgage", 3, 3, false, FnMortgage)
+	register("loantotal", 3, 3, false, FnLoanTotal)
+	register("loaninterest", 3, 3, false, FnLoanInterest)
+	register("loanbalance", 4, 4, false, FnLoanBalance)
+	register("maxloan", 3, 3, false, FnMaxLoan)
+
+	// Investment
+	register("roi", 2, 2, false, FnROI)
+	register("cagr", 3, 3, false, FnCAGR)
+	register("payback", 2, 2, false, FnPayback)
+	register("grossmargin", 2, 2, false, FnGrossMargin)
+	register("netmargin", 2, 2, false, FnNetMargin)
+	register("markup", 2, 2, false, FnMarkup)
+	register("breakeven", 3, 3, false, FnBreakeven)
+
+	// Depreciation
+	register("sln", 3, 3, false, FnSLN)
+	register("ddb", 4, 4, false, FnDDB)
+	register("syd", 4, 4, false, FnSYD)
+	register("macrs", 3, 3, false, FnMACRS)
+
+	// Dividend & valuation
+	register("divyield", 2, 2, false, FnDividendYield)
+	register("pe", 2, 2, false, FnPE)
+	register("eps", 2, 2, false, FnEPS)
 }
 
 // register is a helper to add functions to the registry.
