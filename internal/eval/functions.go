@@ -189,9 +189,42 @@ func registerGraphFunctions() {
 	register("sparkbound", 3, -1, true, FnSparklineBounded)
 	register("sparkwidth", 2, -1, true, FnSparklineFixed)
 
+	// Histograms
+	register("hist", 1, -1, true, FnHistogram)
+	register("histogram", 1, -1, true, FnHistogram)
+	register("histbins", 2, -1, true, FnHistogramBins)
+
+	// Gauges
+	register("gauge", 1, 2, false, FnGauge)
+	register("gaugerange", 3, 3, false, FnGaugeRange)
+	register("battery", 1, 1, false, FnBattery)
+	register("meter", 1, 2, false, FnMeter)
+	register("signal", 1, 1, false, FnSignal)
+	register("stars", 1, 2, false, FnStars)
+	register("hearts", 1, 2, false, FnHearts)
+
 	// Bars
 	register("bar", 1, 2, false, FnBar)
 	register("progress", 1, 2, false, FnProgress)
+
+	// Trends
+	register("trend", 2, -1, true, FnTrend)
+	register("trendstyle", 3, -1, true, FnTrendStyled)
+	register("change", 2, -1, true, FnChange)
+	register("minitrend", 2, -1, true, FnMiniTrend)
+	register("slope", 2, -1, true, FnSlope)
+	register("delta", 2, 2, false, FnDelta)
+	register("deltapct", 2, 2, false, FnDeltaPercent)
+
+	// Dot plots
+	register("dots", 1, -1, true, FnDotPlot)
+	register("dotplot", 1, -1, true, FnDotPlot)
+	register("distdots", 1, -1, true, FnDistDots)
+	register("numline", 3, 3, false, FnNumberLine)
+	register("scatter", 4, -1, true, FnScatter)
+
+	// Comparison
+	register("compare", 2, 2, false, FnCompare)
 }
 
 // register is a helper to add functions to the registry.
