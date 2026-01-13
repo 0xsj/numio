@@ -5,6 +5,7 @@ package eval
 import (
 	"strings"
 
+	"github.com/0xsj/numio/internal/fuzzy"
 	"github.com/0xsj/numio/pkg/types"
 )
 
@@ -23,6 +24,12 @@ type FunctionDef struct {
 // FunctionRegistry holds all registered functions.
 var FunctionRegistry = map[string]FunctionDef{}
 
+// functionNames is a cached list of function names for fuzzy matching.
+var functionNames []string
+
+// fuzzyMatcher is the matcher used for function name suggestions.
+var fuzzyMatcher *fuzzy.Fuzzy
+
 func init() {
 	// Register all functions
 	registerCoreFunctions()
@@ -31,6 +38,20 @@ func init() {
 	registerStatsFunctions()
 	registerFinanceFunctions()
 	registerDateFunctions()
+
+	// Build function names list for fuzzy matching
+	buildFunctionNamesList()
+
+	// Initialize fuzzy matcher
+	fuzzyMatcher = fuzzy.ForFunctionNames()
+}
+
+// buildFunctionNamesList builds the cached list of function names.
+func buildFunctionNamesList() {
+	functionNames = make([]string, 0, len(FunctionRegistry))
+	for name := range FunctionRegistry {
+		functionNames = append(functionNames, name)
+	}
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -43,7 +64,15 @@ func CallFunction(name string, args []types.Value) types.Value {
 
 	fn, ok := FunctionRegistry[name]
 	if !ok {
-		return types.Errorf("unknown function: %s", name)
+		// Try autocorrect for close matches
+		corrected := autocorrectFunctionName(name)
+		if corrected != "" && corrected != name {
+			fn, ok = FunctionRegistry[corrected]
+		}
+
+		if !ok {
+			return types.Errorf("unknown function: %s", name)
+		}
 	}
 
 	// Validate argument count
@@ -52,6 +81,31 @@ func CallFunction(name string, args []types.Value) types.Value {
 	}
 
 	return fn.Handler(args)
+}
+
+// autocorrectFunctionName attempts to correct a misspelled function name.
+// Returns the corrected name if confident, empty string otherwise.
+func autocorrectFunctionName(name string) string {
+	// Find the closest match
+	result := fuzzyMatcher.FindClosest(name, functionNames)
+
+	// Only autocorrect if very confident:
+	// - Distance of 1 (single typo), OR
+	// - Distance of 2 with high similarity (0.8+), OR
+	// - Similarity >= 0.85
+	if result.Distance <= 1 {
+		return result.Text
+	}
+
+	if result.Distance == 2 && result.Similarity >= 0.8 {
+		return result.Text
+	}
+
+	if result.Similarity >= 0.85 {
+		return result.Text
+	}
+
+	return ""
 }
 
 // HasFunction checks if a function exists.
@@ -73,6 +127,24 @@ func ListFunctions() []string {
 		names = append(names, name)
 	}
 	return names
+}
+
+// SuggestFunction returns function name suggestions for a misspelled name.
+func SuggestFunction(name string) []string {
+	return fuzzyMatcher.Suggest(strings.ToLower(name), functionNames)
+}
+
+// AutocorrectFunction returns the corrected function name if close enough.
+func AutocorrectFunction(name string) string {
+	name = strings.ToLower(name)
+
+	// If exact match exists, return it
+	if HasFunction(name) {
+		return name
+	}
+
+	// Try autocorrect with distance 1 (very confident)
+	return fuzzyMatcher.AutocorrectWithThreshold(name, functionNames, 1)
 }
 
 // ════════════════════════════════════════════════════════════════
