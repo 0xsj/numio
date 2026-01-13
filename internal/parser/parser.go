@@ -665,5 +665,11 @@ func MustParseExpr(input string) ast.Expr {
 // parseString parses a string literal.
 func (p *Parser) parseString() ast.Expr {
 	tok := p.advance()
-	return &ast.StringLit{Value: tok.Literal}
+	// Strip surrounding quotes from the literal
+	value := tok.Literal
+	if len(value) >= 2 {
+		// Remove first and last character (the quotes)
+		value = value[1 : len(value)-1]
+	}
+	return &ast.StringLit{Value: value}
 }

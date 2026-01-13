@@ -537,31 +537,16 @@ func TokenizeNoComments(input string) []token.Token {
 // readString reads a string literal ("..." or '...').
 func (l *Lexer) readString(startPos int) token.Token {
 	quote := l.ch // Remember which quote started the string
-	l.readChar()  // Skip opening quote
-
 	var sb strings.Builder
+	sb.WriteRune(quote) // Include opening quote in literal
+	l.readChar()        // Skip opening quote
 
 	for l.ch != 0 && l.ch != quote {
 		// Handle escape sequences
 		if l.ch == '\\' && l.peekChar() != 0 {
-			l.readChar() // Skip backslash
-			switch l.ch {
-			case 'n':
-				sb.WriteRune('\n')
-			case 't':
-				sb.WriteRune('\t')
-			case 'r':
-				sb.WriteRune('\r')
-			case '\\':
-				sb.WriteRune('\\')
-			case '"':
-				sb.WriteRune('"')
-			case '\'':
-				sb.WriteRune('\'')
-			default:
-				sb.WriteRune('\\')
-				sb.WriteRune(l.ch)
-			}
+			sb.WriteRune(l.ch) // Include backslash
+			l.readChar()
+			sb.WriteRune(l.ch) // Include escaped char
 			l.readChar()
 			continue
 		}
@@ -570,8 +555,9 @@ func (l *Lexer) readString(startPos int) token.Token {
 		l.readChar()
 	}
 
-	// Skip closing quote (if present)
+	// Include closing quote (if present)
 	if l.ch == quote {
+		sb.WriteRune(l.ch)
 		l.readChar()
 	}
 
