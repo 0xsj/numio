@@ -620,7 +620,7 @@ func Walk(v Visitor, node Node) {
 // IsLiteral returns true if the expression is a literal value.
 func IsLiteral(e Expr) bool {
 	switch e.(type) {
-	case *NumberLit, *PercentLit, *CurrencyLit, *UnitLit, *MetalLit, *CryptoLit:
+	case *NumberLit, *PercentLit, *CurrencyLit, *UnitLit, *MetalLit, *CryptoLit, *StringLit:
 		return true
 	default:
 		return false
@@ -679,4 +679,16 @@ func GetIdentifiers(e Expr) []string {
 
 	collect(e)
 	return ids
+}
+
+// StringLit represents a string literal.
+type StringLit struct {
+	Value string
+}
+
+func (s *StringLit) node() {}
+func (s *StringLit) expr() {}
+
+func (s *StringLit) String() string {
+	return `"` + s.Value + `"`
 }

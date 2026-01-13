@@ -14,8 +14,9 @@ const (
 	ILLEGAL             // Unknown/invalid token
 
 	// Literals
-	NUMBER     // 42, 3.14, 1,234.56, 1.5e6
-	PERCENT    // 20%
+	NUMBER  // 42, 3.14, 1,234.56, 1.5e6
+	PERCENT // 20%
+	STRING
 	IDENTIFIER // variable names, unit names, currency codes
 
 	// Operators
@@ -55,6 +56,7 @@ var typeNames = map[Type]string{
 	ILLEGAL:    "ILLEGAL",
 	NUMBER:     "NUMBER",
 	PERCENT:    "PERCENT",
+	STRING:     "STRING",
 	IDENTIFIER: "IDENTIFIER",
 	PLUS:       "PLUS",
 	MINUS:      "MINUS",

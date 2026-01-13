@@ -4,6 +4,7 @@ package types
 
 import (
 	"strings"
+	"time"
 )
 
 // ValueKind represents the type of a Value.
@@ -17,6 +18,7 @@ const (
 	ValueWithUnit                    // Value with unit: 5 km, 2 hours
 	ValueMetal                       // Precious metal: 1 oz gold
 	ValueCrypto                      // Cryptocurrency: 0.5 BTC
+	ValueDate                        // Date/time value
 	ValueString                      // String value: sparklines, text
 	ValueError                       // Error during evaluation
 )
@@ -38,6 +40,8 @@ func (k ValueKind) String() string {
 		return "metal"
 	case ValueCrypto:
 		return "crypto"
+	case ValueDate:
+		return "date"
 	case ValueString:
 		return "string"
 	case ValueError:
@@ -59,10 +63,11 @@ type Value struct {
 	Str string
 
 	// Type-specific data
-	Curr   *Currency // For ValueCurrency
-	Unit   *Unit     // For ValueWithUnit
-	Metal  *Metal    // For ValueMetal
-	Crypto *Crypto   // For ValueCrypto
+	Curr   *Currency  // For ValueCurrency
+	Unit   *Unit      // For ValueWithUnit
+	Metal  *Metal     // For ValueMetal
+	Crypto *Crypto    // For ValueCrypto
+	Time   *time.Time // For ValueDate
 
 	// Error message (for ValueError)
 	Err string
@@ -135,6 +140,32 @@ func CryptoValue(amount float64, crypto *Crypto) Value {
 		Kind:   ValueCrypto,
 		Num:    amount,
 		Crypto: crypto,
+	}
+}
+
+// DateValue creates a date/time value.
+func DateValue(t time.Time) Value {
+	return Value{
+		Kind: ValueDate,
+		Time: &t,
+	}
+}
+
+// DateValueFromComponents creates a date value from year, month, day.
+func DateValueFromComponents(year, month, day int) Value {
+	t := time.Date(year, time.Month(month), day, 0, 0, 0, 0, time.Local)
+	return Value{
+		Kind: ValueDate,
+		Time: &t,
+	}
+}
+
+// DateTimeValue creates a date/time value with time components.
+func DateTimeValue(year, month, day, hour, minute, second int) Value {
+	t := time.Date(year, time.Month(month), day, hour, minute, second, 0, time.Local)
+	return Value{
+		Kind: ValueDate,
+		Time: &t,
 	}
 }
 
@@ -241,6 +272,11 @@ func (v Value) IsCrypto() bool {
 	return v.Kind == ValueCrypto
 }
 
+// IsDate returns true if the value is a date/time.
+func (v Value) IsDate() bool {
+	return v.Kind == ValueDate
+}
+
 // IsString returns true if the value is a string.
 func (v Value) IsString() bool {
 	return v.Kind == ValueString
@@ -263,6 +299,15 @@ func (v Value) AsString() string {
 		return v.Str
 	}
 	return v.String()
+}
+
+// AsTime returns the time.Time value.
+// Returns zero time for non-date values.
+func (v Value) AsTime() time.Time {
+	if v.Kind == ValueDate && v.Time != nil {
+		return *v.Time
+	}
+	return time.Time{}
 }
 
 // AsPercentageDisplay returns the percentage in display form (e.g., 20 for 20%).
@@ -306,6 +351,11 @@ func (v Value) Negate() Value {
 	return v.WithAmount(-v.Num)
 }
 
+// WithTime returns a new date value with a different time.
+func (v Value) WithTime(t time.Time) Value {
+	return DateValue(t)
+}
+
 // ════════════════════════════════════════════════════════════════
 // FORMATTING
 // ════════════════════════════════════════════════════════════════
@@ -345,6 +395,12 @@ func (v Value) String() string {
 			return formatCrypto(v.Num, v.Crypto)
 		}
 		return formatNumber(v.Num)
+
+	case ValueDate:
+		if v.Time != nil {
+			return formatDate(*v.Time)
+		}
+		return ""
 
 	case ValueString:
 		return v.Str
@@ -440,6 +496,18 @@ func formatCrypto(amount float64, crypto *Crypto) string {
 	return result
 }
 
+// formatDate formats a date/time value.
+func formatDate(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	// If time is midnight, show date only
+	if t.Hour() == 0 && t.Minute() == 0 && t.Second() == 0 {
+		return t.Format("2006-01-02")
+	}
+	return t.Format("2006-01-02 15:04:05")
+}
+
 // absFloat returns the absolute value of a float.
 func absFloat(n float64) float64 {
 	if n < 0 {
@@ -462,6 +530,24 @@ func (v Value) CanCombineWith(other Value) bool {
 
 	// Strings can't combine with arithmetic
 	if v.IsString() || other.IsString() {
+		return false
+	}
+
+	// Date + number (days) is valid
+	if v.IsDate() && other.IsNumber() {
+		return true
+	}
+	if v.IsNumber() && other.IsDate() {
+		return true
+	}
+
+	// Date - Date is valid (returns number of days)
+	if v.IsDate() && other.IsDate() {
+		return true
+	}
+
+	// Other date operations are invalid
+	if v.IsDate() || other.IsDate() {
 		return false
 	}
 
@@ -499,6 +585,7 @@ func ResultKind(a, b Value) ValueKind {
 		ValueMetal:      4,
 		ValueCrypto:     5,
 		ValueCurrency:   6,
+		ValueDate:       7,
 	}
 
 	pa, oka := priority[a.Kind]
@@ -564,6 +651,12 @@ func (v Value) ToMap() map[string]any {
 		if v.Crypto != nil {
 			m["crypto"] = v.Crypto.Code
 			m["name"] = v.Crypto.Name
+		}
+
+	case ValueDate:
+		if v.Time != nil {
+			m["value"] = v.Time.Format(time.RFC3339)
+			m["unix"] = v.Time.Unix()
 		}
 
 	case ValueString:

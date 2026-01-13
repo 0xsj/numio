@@ -30,6 +30,7 @@ func init() {
 	registerGraphFunctions()
 	registerStatsFunctions()
 	registerFinanceFunctions()
+	registerDateFunctions()
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -337,6 +338,94 @@ func registerFinanceFunctions() {
 	register("divyield", 2, 2, false, FnDividendYield)
 	register("pe", 2, 2, false, FnPE)
 	register("eps", 2, 2, false, FnEPS)
+}
+
+// ════════════════════════════════════════════════════════════════
+// DATE FUNCTION REGISTRATION
+// ════════════════════════════════════════════════════════════════
+
+func registerDateFunctions() {
+	// Current date/time
+	register("today", 0, 0, false, FnToday)
+	register("now", 0, 0, false, FnNow)
+	register("yesterday", 0, 0, false, FnYesterday)
+	register("tomorrow", 0, 0, false, FnTomorrow)
+
+	// Date creation
+	register("date", 3, 3, false, FnDate)
+	register("datetime", 5, 6, false, FnDateTime)
+	register("time", 2, 3, false, FnTime)
+	register("unixtodate", 1, 1, false, FnUnixToDate)
+	register("datetounix", 1, 1, false, FnDateToUnix)
+	register("epoch", 0, 0, false, FnEpoch)
+
+	// Date arithmetic
+	register("adddays", 2, 2, false, FnAddDays)
+	register("addweeks", 2, 2, false, FnAddWeeks)
+	register("addmonths", 2, 2, false, FnAddMonths)
+	register("addyears", 2, 2, false, FnAddYears)
+	register("addhours", 2, 2, false, FnAddHours)
+	register("addminutes", 2, 2, false, FnAddMinutes)
+	register("addseconds", 2, 2, false, FnAddSeconds)
+	register("addworkdays", 2, 2, false, FnAddWorkdays)
+
+	// Date difference
+	register("daysbetween", 2, 2, false, FnDaysBetween)
+	register("weeksbetween", 2, 2, false, FnWeeksBetween)
+	register("monthsbetween", 2, 2, false, FnMonthsBetween)
+	register("yearsbetween", 2, 2, false, FnYearsBetween)
+	register("hoursbetween", 2, 2, false, FnHoursBetween)
+	register("minutesbetween", 2, 2, false, FnMinutesBetween)
+	register("secondsbetween", 2, 2, false, FnSecondsBetween)
+	register("workdaysbetween", 2, 2, false, FnWorkdaysBetween)
+
+	// Date components
+	register("year", 1, 1, false, FnYear)
+	register("month", 1, 1, false, FnMonth)
+	register("day", 1, 1, false, FnDay)
+	register("hour", 1, 1, false, FnHour)
+	register("minute", 1, 1, false, FnMinute)
+	register("second", 1, 1, false, FnSecond)
+	register("weekday", 1, 1, false, FnWeekday)
+	register("weekdayiso", 1, 1, false, FnWeekdayISO)
+	register("weekdayname", 1, 1, false, FnWeekdayName)
+	register("monthname", 1, 1, false, FnMonthName)
+	register("dayofyear", 1, 1, false, FnDayOfYear)
+	register("weekofyear", 1, 1, false, FnWeekOfYear)
+	register("quarter", 1, 1, false, FnQuarter)
+
+	// Date utilities
+	register("isleapyear", 1, 1, false, FnIsLeapYear)
+	register("daysinmonth", 1, 2, false, FnDaysInMonth)
+	register("isweekend", 1, 1, false, FnIsWeekend)
+	register("isweekday", 1, 1, false, FnIsWeekday)
+	register("age", 1, 1, false, FnAge)
+
+	// Date rounding
+	register("startofday", 1, 1, false, FnStartOfDay)
+	register("endofday", 1, 1, false, FnEndOfDay)
+	register("startofmonth", 1, 1, false, FnStartOfMonth)
+	register("endofmonth", 1, 1, false, FnEndOfMonth)
+	register("startofyear", 1, 1, false, FnStartOfYear)
+	register("endofyear", 1, 1, false, FnEndOfYear)
+	register("startofweek", 1, 1, false, FnStartOfWeek)
+	register("endofweek", 1, 1, false, FnEndOfWeek)
+
+	// Timezone
+	register("intimezone", 2, 2, false, FnInTimezone)
+	register("toutc", 1, 1, false, FnToUTC)
+	register("tolocal", 1, 1, false, FnToLocal)
+	register("timezoneoffset", 1, 1, false, FnTimezoneOffset)
+	register("nowin", 1, 1, false, FnNowInTimezone)
+
+	// Formatting
+	register("formatdate", 2, 2, false, FnFormatDate)
+	register("dateiso", 1, 1, false, FnDateISO)
+
+	// Comparison
+	register("isbefore", 2, 2, false, FnIsBefore)
+	register("isafter", 2, 2, false, FnIsAfter)
+	register("issameday", 2, 2, false, FnIsSameDay)
 }
 
 // register is a helper to add functions to the registry.

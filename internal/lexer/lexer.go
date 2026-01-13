@@ -147,6 +147,10 @@ func (l *Lexer) NextToken() token.Token {
 		return l.readComment(startPos)
 	}
 
+	if l.ch == '"' || l.ch == '\'' {
+		return l.readString(startPos)
+	}
+
 	// Check for currency symbols (must be before operators)
 	if types.IsCurrencySymbolRune(l.ch) || types.IsCryptoSymbolRune(l.ch) {
 		return l.readCurrencySymbol(startPos)
@@ -528,4 +532,48 @@ func TokenizeNoComments(input string) []token.Token {
 	}
 
 	return filtered
+}
+
+// readString reads a string literal ("..." or '...').
+func (l *Lexer) readString(startPos int) token.Token {
+	quote := l.ch // Remember which quote started the string
+	l.readChar()  // Skip opening quote
+
+	var sb strings.Builder
+
+	for l.ch != 0 && l.ch != quote {
+		// Handle escape sequences
+		if l.ch == '\\' && l.peekChar() != 0 {
+			l.readChar() // Skip backslash
+			switch l.ch {
+			case 'n':
+				sb.WriteRune('\n')
+			case 't':
+				sb.WriteRune('\t')
+			case 'r':
+				sb.WriteRune('\r')
+			case '\\':
+				sb.WriteRune('\\')
+			case '"':
+				sb.WriteRune('"')
+			case '\'':
+				sb.WriteRune('\'')
+			default:
+				sb.WriteRune('\\')
+				sb.WriteRune(l.ch)
+			}
+			l.readChar()
+			continue
+		}
+
+		sb.WriteRune(l.ch)
+		l.readChar()
+	}
+
+	// Skip closing quote (if present)
+	if l.ch == quote {
+		l.readChar()
+	}
+
+	return token.New(token.STRING, sb.String(), startPos)
 }

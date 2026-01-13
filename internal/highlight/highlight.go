@@ -138,6 +138,9 @@ func (h *Highlighter) classifyToken(tok token.Token) TokenClass {
 	case token.PERCENT:
 		return ClassPercent
 
+	case token.STRING:
+		return ClassString
+
 	// Operators
 	case token.PLUS, token.MINUS, token.STAR, token.SLASH, token.CARET, token.POWER:
 		return ClassOperator

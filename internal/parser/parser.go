@@ -380,6 +380,9 @@ func (p *Parser) parsePrimaryExpr() ast.Expr {
 	case token.PERCENT:
 		return p.parsePercent()
 
+	case token.STRING:
+		return p.parseString()
+
 	case token.DOLLAR, token.EURO, token.POUND, token.YEN, token.BITCOIN, token.CURRENCY:
 		return p.parseCurrencyWithSymbol()
 
@@ -657,4 +660,10 @@ func MustParseExpr(input string) ast.Expr {
 		panic("parse error: " + errs[0].Error())
 	}
 	return expr
+}
+
+// parseString parses a string literal.
+func (p *Parser) parseString() ast.Expr {
+	tok := p.advance()
+	return &ast.StringLit{Value: tok.Literal}
 }

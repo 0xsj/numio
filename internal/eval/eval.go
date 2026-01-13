@@ -142,6 +142,9 @@ func (e *Evaluator) evalExpr(expr ast.Expr) types.Value {
 	case *ast.CryptoLit:
 		return types.CryptoValue(ex.Amount, ex.Crypto)
 
+	case *ast.StringLit:
+		return types.StringValue(ex.Value)
+
 	// References
 	case *ast.Identifier:
 		return e.evalIdentifier(ex)

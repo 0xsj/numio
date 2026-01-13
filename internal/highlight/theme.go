@@ -39,6 +39,7 @@ func DefaultTheme() *Theme {
 		Colors: map[TokenClass]Color{
 			ClassNone:       Palette.White,
 			ClassNumber:     Palette.Purple,
+			ClassString:     Palette.Green, // ADD THIS
 			ClassPercent:    Palette.Magenta,
 			ClassOperator:   Palette.Cyan,
 			ClassParen:      Palette.Gray400,
@@ -61,21 +62,22 @@ func DraculaTheme() *Theme {
 	return &Theme{
 		Name: "dracula",
 		Colors: map[TokenClass]Color{
-			ClassNone:       NewColor("#f8f8f2"), // Foreground
-			ClassNumber:     NewColor("#bd93f9"), // Purple
-			ClassPercent:    NewColor("#ff79c6"), // Pink
-			ClassOperator:   NewColor("#ff79c6"), // Pink
-			ClassParen:      NewColor("#f8f8f2"), // Foreground
-			ClassIdentifier: NewColor("#f8f8f2"), // Foreground
-			ClassKeyword:    NewColor("#ff79c6"), // Pink
-			ClassFunction:   NewColor("#50fa7b"), // Green
-			ClassCurrency:   NewColor("#50fa7b"), // Green
-			ClassUnit:       NewColor("#f1fa8c"), // Yellow
-			ClassCrypto:     NewColor("#ffb86c"), // Orange
-			ClassMetal:      NewColor("#f1fa8c"), // Yellow
-			ClassComment:    NewColor("#6272a4"), // Comment
-			ClassError:      NewColor("#ff5555"), // Red
-			ClassAssign:     NewColor("#ff79c6"), // Pink
+			ClassNone:       NewColor("#f8f8f2"),
+			ClassNumber:     NewColor("#bd93f9"),
+			ClassString:     NewColor("#f1fa8c"), // ADD THIS - Yellow
+			ClassPercent:    NewColor("#ff79c6"),
+			ClassOperator:   NewColor("#ff79c6"),
+			ClassParen:      NewColor("#f8f8f2"),
+			ClassIdentifier: NewColor("#f8f8f2"),
+			ClassKeyword:    NewColor("#ff79c6"),
+			ClassFunction:   NewColor("#50fa7b"),
+			ClassCurrency:   NewColor("#50fa7b"),
+			ClassUnit:       NewColor("#f1fa8c"),
+			ClassCrypto:     NewColor("#ffb86c"),
+			ClassMetal:      NewColor("#f1fa8c"),
+			ClassComment:    NewColor("#6272a4"),
+			ClassError:      NewColor("#ff5555"),
+			ClassAssign:     NewColor("#ff79c6"),
 		},
 	}
 }
@@ -85,21 +87,22 @@ func MonokaiTheme() *Theme {
 	return &Theme{
 		Name: "monokai",
 		Colors: map[TokenClass]Color{
-			ClassNone:       NewColor("#f8f8f2"), // Foreground
-			ClassNumber:     NewColor("#ae81ff"), // Purple
-			ClassPercent:    NewColor("#ae81ff"), // Purple
-			ClassOperator:   NewColor("#f92672"), // Pink
-			ClassParen:      NewColor("#f8f8f2"), // Foreground
-			ClassIdentifier: NewColor("#f8f8f2"), // Foreground
-			ClassKeyword:    NewColor("#f92672"), // Pink
-			ClassFunction:   NewColor("#66d9ef"), // Blue
-			ClassCurrency:   NewColor("#a6e22e"), // Green
-			ClassUnit:       NewColor("#e6db74"), // Yellow
-			ClassCrypto:     NewColor("#fd971f"), // Orange
-			ClassMetal:      NewColor("#e6db74"), // Yellow
-			ClassComment:    NewColor("#75715e"), // Comment
-			ClassError:      NewColor("#f92672"), // Pink/Red
-			ClassAssign:     NewColor("#f92672"), // Pink
+			ClassNone:       NewColor("#f8f8f2"),
+			ClassNumber:     NewColor("#ae81ff"),
+			ClassString:     NewColor("#e6db74"), // ADD THIS - Yellow
+			ClassPercent:    NewColor("#ae81ff"),
+			ClassOperator:   NewColor("#f92672"),
+			ClassParen:      NewColor("#f8f8f2"),
+			ClassIdentifier: NewColor("#f8f8f2"),
+			ClassKeyword:    NewColor("#f92672"),
+			ClassFunction:   NewColor("#66d9ef"),
+			ClassCurrency:   NewColor("#a6e22e"),
+			ClassUnit:       NewColor("#e6db74"),
+			ClassCrypto:     NewColor("#fd971f"),
+			ClassMetal:      NewColor("#e6db74"),
+			ClassComment:    NewColor("#75715e"),
+			ClassError:      NewColor("#f92672"),
+			ClassAssign:     NewColor("#f92672"),
 		},
 	}
 }
@@ -109,21 +112,22 @@ func GruvboxTheme() *Theme {
 	return &Theme{
 		Name: "gruvbox",
 		Colors: map[TokenClass]Color{
-			ClassNone:       NewColor("#ebdbb2"), // Foreground
-			ClassNumber:     NewColor("#d3869b"), // Purple
-			ClassPercent:    NewColor("#d3869b"), // Purple
-			ClassOperator:   NewColor("#8ec07c"), // Aqua
-			ClassParen:      NewColor("#a89984"), // Gray
-			ClassIdentifier: NewColor("#ebdbb2"), // Foreground
-			ClassKeyword:    NewColor("#fb4934"), // Red
-			ClassFunction:   NewColor("#83a598"), // Blue
-			ClassCurrency:   NewColor("#b8bb26"), // Green
-			ClassUnit:       NewColor("#fabd2f"), // Yellow
-			ClassCrypto:     NewColor("#fe8019"), // Orange
-			ClassMetal:      NewColor("#fabd2f"), // Yellow
-			ClassComment:    NewColor("#928374"), // Gray
-			ClassError:      NewColor("#fb4934"), // Red
-			ClassAssign:     NewColor("#8ec07c"), // Aqua
+			ClassNone:       NewColor("#ebdbb2"),
+			ClassNumber:     NewColor("#d3869b"),
+			ClassString:     NewColor("#b8bb26"), // ADD THIS - Green
+			ClassPercent:    NewColor("#d3869b"),
+			ClassOperator:   NewColor("#8ec07c"),
+			ClassParen:      NewColor("#a89984"),
+			ClassIdentifier: NewColor("#ebdbb2"),
+			ClassKeyword:    NewColor("#fb4934"),
+			ClassFunction:   NewColor("#83a598"),
+			ClassCurrency:   NewColor("#b8bb26"),
+			ClassUnit:       NewColor("#fabd2f"),
+			ClassCrypto:     NewColor("#fe8019"),
+			ClassMetal:      NewColor("#fabd2f"),
+			ClassComment:    NewColor("#928374"),
+			ClassError:      NewColor("#fb4934"),
+			ClassAssign:     NewColor("#8ec07c"),
 		},
 	}
 }
@@ -133,21 +137,22 @@ func LightTheme() *Theme {
 	return &Theme{
 		Name: "light",
 		Colors: map[TokenClass]Color{
-			ClassNone:       NewColor("#24292e"), // Dark gray
-			ClassNumber:     NewColor("#6f42c1"), // Purple
-			ClassPercent:    NewColor("#6f42c1"), // Purple
-			ClassOperator:   NewColor("#d73a49"), // Red
-			ClassParen:      NewColor("#24292e"), // Dark gray
-			ClassIdentifier: NewColor("#24292e"), // Dark gray
-			ClassKeyword:    NewColor("#d73a49"), // Red
-			ClassFunction:   NewColor("#005cc5"), // Blue
-			ClassCurrency:   NewColor("#22863a"), // Green
-			ClassUnit:       NewColor("#b08800"), // Yellow/brown
-			ClassCrypto:     NewColor("#e36209"), // Orange
-			ClassMetal:      NewColor("#b08800"), // Yellow/brown
-			ClassComment:    NewColor("#6a737d"), // Gray
-			ClassError:      NewColor("#cb2431"), // Red
-			ClassAssign:     NewColor("#d73a49"), // Red
+			ClassNone:       NewColor("#24292e"),
+			ClassNumber:     NewColor("#6f42c1"),
+			ClassString:     NewColor("#032f62"), // ADD THIS - Dark blue
+			ClassPercent:    NewColor("#6f42c1"),
+			ClassOperator:   NewColor("#d73a49"),
+			ClassParen:      NewColor("#24292e"),
+			ClassIdentifier: NewColor("#24292e"),
+			ClassKeyword:    NewColor("#d73a49"),
+			ClassFunction:   NewColor("#005cc5"),
+			ClassCurrency:   NewColor("#22863a"),
+			ClassUnit:       NewColor("#b08800"),
+			ClassCrypto:     NewColor("#e36209"),
+			ClassMetal:      NewColor("#b08800"),
+			ClassComment:    NewColor("#6a737d"),
+			ClassError:      NewColor("#cb2431"),
+			ClassAssign:     NewColor("#d73a49"),
 		},
 	}
 }

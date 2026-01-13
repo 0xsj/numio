@@ -39,21 +39,22 @@ func (c Color) String() string {
 type TokenClass int
 
 const (
-	ClassNone       TokenClass = iota // No special highlighting
-	ClassNumber                       // Numeric literals: 42, 3.14
-	ClassPercent                      // Percentages: 20%
-	ClassOperator                     // Operators: +, -, *, /, ^
-	ClassParen                        // Parentheses: (, )
-	ClassIdentifier                   // Variable names
-	ClassKeyword                      // Keywords: in, to, of
-	ClassFunction                     // Function names: sum, avg
-	ClassCurrency                     // Currency symbols and codes: $, €, USD
-	ClassUnit                         // Unit codes: km, lb, hours
-	ClassCrypto                       // Crypto codes: BTC, ETH
-	ClassMetal                        // Metal codes: XAU, XAG
-	ClassComment                      // Comments: # or //
-	ClassError                        // Errors
-	ClassAssign                       // Assignment: =
+	ClassNone   TokenClass = iota // No special highlighting
+	ClassNumber                   // Numeric literals: 42, 3.14
+	ClassString
+	ClassPercent    // Percentages: 20%
+	ClassOperator   // Operators: +, -, *, /, ^
+	ClassParen      // Parentheses: (, )
+	ClassIdentifier // Variable names
+	ClassKeyword    // Keywords: in, to, of
+	ClassFunction   // Function names: sum, avg
+	ClassCurrency   // Currency symbols and codes: $, €, USD
+	ClassUnit       // Unit codes: km, lb, hours
+	ClassCrypto     // Crypto codes: BTC, ETH
+	ClassMetal      // Metal codes: XAU, XAG
+	ClassComment    // Comments: # or //
+	ClassError      // Errors
+	ClassAssign     // Assignment: =
 )
 
 // String returns the token class name.
@@ -63,6 +64,8 @@ func (c TokenClass) String() string {
 		return "none"
 	case ClassNumber:
 		return "number"
+	case ClassString:
+		return "string"
 	case ClassPercent:
 		return "percent"
 	case ClassOperator:
