@@ -1100,7 +1100,11 @@ func (a *App) evaluateLine(line string) string {
 	}
 
 	if result.IsError() {
-		return errorStyle.Render("err")
+		errMsg := result.String()
+		if len(errMsg) > 25 {
+			errMsg = errMsg[:22] + "..."
+		}
+		return errorStyle.Render(errMsg)
 	}
 
 	return resultStyle.Render(result.String())

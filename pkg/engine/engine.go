@@ -9,6 +9,7 @@ import (
 
 	"github.com/0xsj/numio/internal/ast"
 	"github.com/0xsj/numio/internal/eval"
+	"github.com/0xsj/numio/internal/nlp"
 	"github.com/0xsj/numio/internal/parser"
 	"github.com/0xsj/numio/pkg/cache"
 	"github.com/0xsj/numio/pkg/errors"
@@ -19,6 +20,7 @@ import (
 type Engine struct {
 	evaluator *eval.Evaluator
 	rateCache *cache.RateCache
+	nlp       *nlp.Processor
 }
 
 // New creates a new Engine with default settings.
@@ -30,6 +32,7 @@ func New() *Engine {
 	return &Engine{
 		evaluator: eval.NewWithContext(ctx),
 		rateCache: rc,
+		nlp:       nlp.New(),
 	}
 }
 
@@ -44,6 +47,7 @@ func NewWithCache(rc *cache.RateCache) *Engine {
 	return &Engine{
 		evaluator: eval.NewWithContext(ctx),
 		rateCache: rc,
+		nlp:       nlp.New(),
 	}
 }
 
@@ -81,13 +85,19 @@ func (e *Engine) Eval(input string) types.Value {
 		return types.Empty()
 	}
 
+	// Process through NLP first
+	processed := input
+	if e.nlp != nil && e.nlp.IsEnabled() {
+		processed, _ = e.nlp.Process(input)
+	}
+
 	// Parse and evaluate
-	line, errs := parser.ParseLine(input)
+	line, errs := parser.ParseLine(processed)
 	if len(errs) > 0 {
 		return types.Error(errs[0].Message)
 	}
 
-	line.Raw = input
+	line.Raw = input // Keep original input for display
 	return e.evaluator.EvalLine(line)
 }
 
@@ -119,13 +129,116 @@ func (e *Engine) EvalPreview(input string) types.Value {
 		return types.Empty()
 	}
 
-	line, errs := parser.ParseLine(input)
+	// Process through NLP first
+	processed := input
+	if e.nlp != nil && e.nlp.IsEnabled() {
+		processed, _ = e.nlp.Process(input)
+	}
+
+	line, errs := parser.ParseLine(processed)
 	if len(errs) > 0 {
 		return types.Error(errs[0].Message)
 	}
 
 	line.Raw = input
 	return tempEval.EvalLine(line)
+}
+
+// EvalWithNLPInfo evaluates input and returns NLP processing details.
+func (e *Engine) EvalWithNLPInfo(input string) (types.Value, *nlp.ProcessResult) {
+	trimmed := strings.TrimSpace(input)
+	if trimmed == "" {
+		return types.Empty(), nil
+	}
+
+	if strings.HasPrefix(trimmed, "#") || strings.HasPrefix(trimmed, "//") {
+		return types.Empty(), nil
+	}
+
+	// Get NLP processing info
+	var nlpResult *nlp.ProcessResult
+	processed := input
+	if e.nlp != nil && e.nlp.IsEnabled() {
+		nlpResult = e.nlp.ProcessWithInfo(input)
+		processed = nlpResult.Output
+	}
+
+	// Parse and evaluate
+	line, errs := parser.ParseLine(processed)
+	if len(errs) > 0 {
+		return types.Error(errs[0].Message), nlpResult
+	}
+
+	line.Raw = input
+	return e.evaluator.EvalLine(line), nlpResult
+}
+
+// ════════════════════════════════════════════════════════════════
+// NLP SETTINGS
+// ════════════════════════════════════════════════════════════════
+
+// NLPEnabled returns whether NLP processing is enabled.
+func (e *Engine) NLPEnabled() bool {
+	return e.nlp != nil && e.nlp.IsEnabled()
+}
+
+// EnableNLP enables NLP processing.
+func (e *Engine) EnableNLP() {
+	if e.nlp != nil {
+		e.nlp.Enable()
+	}
+}
+
+// DisableNLP disables NLP processing.
+func (e *Engine) DisableNLP() {
+	if e.nlp != nil {
+		e.nlp.Disable()
+	}
+}
+
+// SetNLPEnabled sets whether NLP processing is enabled.
+func (e *Engine) SetNLPEnabled(enabled bool) {
+	if e.nlp != nil {
+		if enabled {
+			e.nlp.Enable()
+		} else {
+			e.nlp.Disable()
+		}
+	}
+}
+
+// ProcessNLP processes input through NLP without evaluating.
+// Returns the transformed expression and whether a transformation was applied.
+func (e *Engine) ProcessNLP(input string) (string, bool) {
+	if e.nlp == nil || !e.nlp.IsEnabled() {
+		return input, false
+	}
+	return e.nlp.Process(input)
+}
+
+// ProcessNLPWithInfo processes input through NLP and returns detailed info.
+func (e *Engine) ProcessNLPWithInfo(input string) *nlp.ProcessResult {
+	if e.nlp == nil || !e.nlp.IsEnabled() {
+		return &nlp.ProcessResult{
+			Original: input,
+			Output:   input,
+			Matched:  false,
+		}
+	}
+	return e.nlp.ProcessWithInfo(input)
+}
+
+// NLPExamples returns example NLP expressions.
+func (e *Engine) NLPExamples() []nlp.Example {
+	return nlp.Examples()
+}
+
+// NLPPatternCount returns the number of registered NLP patterns.
+func (e *Engine) NLPPatternCount() int {
+	if e.nlp == nil {
+		return 0
+	}
+	return e.nlp.PatternCount()
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -359,6 +472,7 @@ func (e *Engine) Clone() *Engine {
 	return &Engine{
 		evaluator: eval.NewWithContext(ctx),
 		rateCache: e.rateCache,
+		nlp:       nlp.New(), // Fresh NLP processor
 	}
 }
 

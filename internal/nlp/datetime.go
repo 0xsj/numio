@@ -68,39 +68,85 @@ func patternNowInTimezone() *Pattern {
 }
 
 // patternTimeInTimezone: "3pm PST", "15:00 UTC", "3:30 pm EST"
+// patternTimeInTimezone: "3pm PST", "15:00 UTC", "3:30 pm EST"
+// Must have either AM/PM or a colon (to distinguish from "30 days")
 func patternTimeInTimezone() *Pattern {
 	return NewPattern("time_in_timezone").
-		Regex(`(\d{1,2})(?::(\d{2}))?\s*(am|pm|a\.m\.|p\.m\.)?\s+(\w{2,5})`).
+		Regex(`(\d{1,2}):(\d{2})\s*(\w{2,5})|(\d{1,2})\s*(am|pm|a\.m\.|p\.m\.)\s+(\w{2,5})`).
 		Priority(90).
 		Handler(func(input string, matches []string) (string, bool) {
-			if len(matches) < 5 {
+			if len(matches) < 7 {
 				return "", false
 			}
 
-			hour, ok := ExtractNumber(matches[1])
-			if !ok {
+			var hour, minute int
+			var tz string
+			// var ok bool
+
+			if matches[1] != "" {
+				// Format: "15:00 UTC" (24-hour with colon)
+				h, ok1 := ExtractNumber(matches[1])
+				m, ok2 := ExtractNumber(matches[2])
+				if !ok1 || !ok2 {
+					return "", false
+				}
+				hour = int(h)
+				minute = int(m)
+				tz = strings.ToUpper(matches[3])
+			} else if matches[4] != "" {
+				// Format: "3pm PST" (12-hour with AM/PM)
+				h, ok := ExtractNumber(matches[4])
+				if !ok {
+					return "", false
+				}
+				hour = int(h)
+				minute = 0
+
+				ampm := strings.ToLower(strings.ReplaceAll(matches[5], ".", ""))
+				if ampm == "pm" && hour < 12 {
+					hour += 12
+				} else if ampm == "am" && hour == 12 {
+					hour = 0
+				}
+				tz = strings.ToUpper(matches[6])
+			} else {
 				return "", false
 			}
 
-			minute := 0.0
-			if matches[2] != "" {
-				minute, _ = ExtractNumber(matches[2])
+			// Validate hour
+			if hour < 0 || hour > 23 {
+				return "", false
 			}
 
-			// Handle AM/PM
-			ampm := strings.ToLower(strings.ReplaceAll(matches[3], ".", ""))
-			h := int(hour)
-			if ampm == "pm" && h < 12 {
-				h += 12
-			} else if ampm == "am" && h == 12 {
-				h = 0
+			// Validate timezone (must not be a time unit)
+			tzLower := strings.ToLower(tz)
+			if isTimeUnit(tzLower) {
+				return "", false
 			}
 
-			tz := strings.ToUpper(matches[4])
-
-			return `intimezone(time(` + FormatInt(h) + `, ` + FormatInt(int(minute)) + `), "` + tz + `")`, true
+			return `intimezone(time(` + FormatInt(hour) + `, ` + FormatInt(minute) + `), "` + tz + `")`, true
 		}).
 		Build()
+}
+
+// isTimeUnit checks if a string is a time unit (not a timezone).
+func isTimeUnit(s string) bool {
+	units := map[string]bool{
+		"day": true, "days": true,
+		"week": true, "weeks": true,
+		"month": true, "months": true,
+		"year": true, "years": true,
+		"hour": true, "hours": true,
+		"minute": true, "minutes": true,
+		"second": true, "seconds": true,
+		"min": true, "mins": true,
+		"sec": true, "secs": true,
+		"hr": true, "hrs": true,
+		"wk": true, "wks": true,
+		"mo": true, "mos": true,
+		"yr": true, "yrs": true,
+	}
+	return units[s]
 }
 
 // patternWhatTimeIn: "what time is it in Tokyo", "time in London"

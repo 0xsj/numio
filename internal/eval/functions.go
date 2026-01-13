@@ -338,6 +338,12 @@ func registerFinanceFunctions() {
 	register("divyield", 2, 2, false, FnDividendYield)
 	register("pe", 2, 2, false, FnPE)
 	register("eps", 2, 2, false, FnEPS)
+
+	// Tips
+	register("tip", 2, 2, false, FnTip)
+	register("tipamount", 2, 2, false, FnTipAmount)
+	register("splittip", 3, 3, false, FnSplitTip)
+	register("percentchange", 2, 2, false, FnPercentChange)
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -426,6 +432,11 @@ func registerDateFunctions() {
 	register("isbefore", 2, 2, false, FnIsBefore)
 	register("isafter", 2, 2, false, FnIsAfter)
 	register("issameday", 2, 2, false, FnIsSameDay)
+
+	// Weekday navigation
+	register("nextweekday", 2, 2, false, FnNextWeekday)
+	register("lastweekday", 2, 2, false, FnLastWeekday)
+	register("thisweekday", 2, 2, false, FnThisWeekday)
 }
 
 // register is a helper to add functions to the registry.

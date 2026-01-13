@@ -196,9 +196,22 @@ func containsOperator(input string) bool {
 func containsNaturalLanguage(input string) bool {
 	lower := strings.ToLower(input)
 	keywords := []string{
-		"what", "how", "convert", "from", "ago", "since", "until",
-		"between", "next", "last", "this", "payment", "mortgage",
-		"loan", "tip", "split", "compound", "interest",
+		// Question words
+		"what", "how", "when", "where",
+		// Conversion
+		"convert", "from", "to",
+		// Time references
+		"today", "tomorrow", "yesterday", "now",
+		"ago", "since", "until", "til", "till",
+		"next", "last", "this",
+		// Time units
+		"days", "day", "weeks", "week", "months", "month", "years", "year",
+		"hours", "hour", "minutes", "minute", "seconds", "second",
+		// Finance
+		"payment", "mortgage", "loan", "tip", "split",
+		"compound", "interest", "percent",
+		// Ranges
+		"between", "and",
 	}
 	for _, kw := range keywords {
 		if strings.Contains(lower, kw) {

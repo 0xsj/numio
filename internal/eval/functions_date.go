@@ -1052,3 +1052,92 @@ func FnNowInTimezone(args []types.Value) types.Value {
 
 	return types.DateValue(time.Now().In(loc))
 }
+
+// ════════════════════════════════════════════════════════════════
+// WEEKDAY NAVIGATION
+// ════════════════════════════════════════════════════════════════
+
+// FnNextWeekday finds the next occurrence of a weekday.
+// Args: date, weekday (0=Sunday, 6=Saturday)
+func FnNextWeekday(args []types.Value) types.Value {
+	if len(args) != 2 {
+		return types.Error("nextweekday requires 2 arguments: date, weekday (0-6)")
+	}
+
+	if !args[0].IsDate() {
+		return types.Error("nextweekday requires a date as first argument")
+	}
+
+	targetDay := int(args[1].AsFloat())
+	if targetDay < 0 || targetDay > 6 {
+		return types.Error("nextweekday: weekday must be 0-6 (0=Sunday)")
+	}
+
+	d := args[0].AsTime()
+	currentDay := int(d.Weekday())
+
+	// Calculate days until next occurrence
+	daysUntil := targetDay - currentDay
+	if daysUntil <= 0 {
+		daysUntil += 7
+	}
+
+	result := d.AddDate(0, 0, daysUntil)
+	return types.DateValue(result)
+}
+
+// FnLastWeekday finds the previous occurrence of a weekday.
+// Args: date, weekday (0=Sunday, 6=Saturday)
+func FnLastWeekday(args []types.Value) types.Value {
+	if len(args) != 2 {
+		return types.Error("lastweekday requires 2 arguments: date, weekday (0-6)")
+	}
+
+	if !args[0].IsDate() {
+		return types.Error("lastweekday requires a date as first argument")
+	}
+
+	targetDay := int(args[1].AsFloat())
+	if targetDay < 0 || targetDay > 6 {
+		return types.Error("lastweekday: weekday must be 0-6 (0=Sunday)")
+	}
+
+	d := args[0].AsTime()
+	currentDay := int(d.Weekday())
+
+	// Calculate days since last occurrence
+	daysSince := currentDay - targetDay
+	if daysSince <= 0 {
+		daysSince += 7
+	}
+
+	result := d.AddDate(0, 0, -daysSince)
+	return types.DateValue(result)
+}
+
+// FnThisWeekday finds the given weekday in the current week.
+// Args: date, weekday (0=Sunday, 6=Saturday)
+// Note: Week starts on Sunday
+func FnThisWeekday(args []types.Value) types.Value {
+	if len(args) != 2 {
+		return types.Error("thisweekday requires 2 arguments: date, weekday (0-6)")
+	}
+
+	if !args[0].IsDate() {
+		return types.Error("thisweekday requires a date as first argument")
+	}
+
+	targetDay := int(args[1].AsFloat())
+	if targetDay < 0 || targetDay > 6 {
+		return types.Error("thisweekday: weekday must be 0-6 (0=Sunday)")
+	}
+
+	d := args[0].AsTime()
+	currentDay := int(d.Weekday())
+
+	// Calculate offset to target day within the same week
+	offset := targetDay - currentDay
+
+	result := d.AddDate(0, 0, offset)
+	return types.DateValue(result)
+}

@@ -532,3 +532,80 @@ func FnEPS(args []types.Value) types.Value {
 	result := finance.EarningsPerShare(netIncome, shares)
 	return types.Number(finance.RoundCurrency(result))
 }
+
+// ════════════════════════════════════════════════════════════════
+// TIP FUNCTIONS
+// ════════════════════════════════════════════════════════════════
+
+// FnTip calculates tip amount and total.
+// Args: bill, tipPercent
+// Returns: total (bill + tip)
+func FnTip(args []types.Value) types.Value {
+	if len(args) != 2 {
+		return types.Error("tip requires 2 arguments: bill, tipPercent")
+	}
+
+	bill := args[0].AsFloat()
+	tipPercent := args[1].AsFloat() / 100
+
+	tip := bill * tipPercent
+	total := bill + tip
+
+	return types.Number(finance.RoundCurrency(total))
+}
+
+// FnTipAmount calculates just the tip amount.
+// Args: bill, tipPercent
+func FnTipAmount(args []types.Value) types.Value {
+	if len(args) != 2 {
+		return types.Error("tipamount requires 2 arguments: bill, tipPercent")
+	}
+
+	bill := args[0].AsFloat()
+	tipPercent := args[1].AsFloat() / 100
+
+	tip := bill * tipPercent
+
+	return types.Number(finance.RoundCurrency(tip))
+}
+
+// FnSplitTip calculates per-person amount for a split bill with tip.
+// Args: bill, tipPercent, people
+func FnSplitTip(args []types.Value) types.Value {
+	if len(args) != 3 {
+		return types.Error("splittip requires 3 arguments: bill, tipPercent, people")
+	}
+
+	bill := args[0].AsFloat()
+	tipPercent := args[1].AsFloat() / 100
+	people := args[2].AsFloat()
+
+	if people <= 0 {
+		return types.Error("splittip: people must be greater than 0")
+	}
+
+	total := bill * (1 + tipPercent)
+	perPerson := total / people
+
+	return types.Number(finance.RoundCurrency(perPerson))
+}
+
+// FnPercentChange calculates percentage change between two values.
+// Args: oldValue, newValue
+// Returns: percentage change (e.g., 50 for 50% increase)
+func FnPercentChange(args []types.Value) types.Value {
+	if len(args) != 2 {
+		return types.Error("percentchange requires 2 arguments: oldValue, newValue")
+	}
+
+	oldVal := args[0].AsFloat()
+	newVal := args[1].AsFloat()
+
+	if oldVal == 0 {
+		return types.Error("percentchange: old value cannot be zero")
+	}
+
+	change := ((newVal - oldVal) / oldVal) * 100
+
+	return types.Number(finance.RoundRate(change))
+}
