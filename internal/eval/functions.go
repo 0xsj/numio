@@ -28,6 +28,7 @@ func init() {
 	registerCoreFunctions()
 	registerMathFunctions()
 	registerGraphFunctions()
+	registerStatsFunctions()
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -225,6 +226,64 @@ func registerGraphFunctions() {
 
 	// Comparison
 	register("compare", 2, 2, false, FnCompare)
+}
+
+// ════════════════════════════════════════════════════════════════
+// STATS FUNCTION REGISTRATION
+// ════════════════════════════════════════════════════════════════
+
+func registerStatsFunctions() {
+	// Central tendency
+	register("median", 1, -1, true, FnMedian)
+	register("mode", 1, -1, true, FnMode)
+	register("geomean", 1, -1, true, FnGeomean)
+	register("harmean", 1, -1, true, FnHarmean)
+	register("trimmean", 2, -1, true, FnTrimmedMean)
+	register("midrange", 1, -1, true, FnMidrange)
+
+	// Dispersion
+	register("variance", 1, -1, true, FnVariance)
+	register("var", 1, -1, true, FnVariance)
+	register("svariance", 2, -1, true, FnSampleVariance)
+	register("stddev", 1, -1, true, FnStdDev)
+	register("stdev", 1, -1, true, FnStdDev)
+	register("sstddev", 2, -1, true, FnSampleStdDev)
+	register("sstdev", 2, -1, true, FnSampleStdDev)
+	register("range", 1, -1, true, FnStatRange)
+	register("mad", 1, -1, true, FnMAD)
+	register("rms", 1, -1, true, FnRMS)
+	register("cv", 1, -1, true, FnCV)
+	register("skewness", 3, -1, true, FnSkewness)
+	register("kurtosis", 4, -1, true, FnKurtosis)
+	register("stderr", 2, -1, true, FnStdErr)
+
+	// Percentiles & quartiles
+	register("percentile", 2, -1, true, FnPercentile)
+	register("pctl", 2, -1, true, FnPercentile)
+	register("quartile", 2, -1, true, FnQuartile)
+	register("q1", 1, -1, true, FnQ1)
+	register("q2", 1, -1, true, FnQ2)
+	register("q3", 1, -1, true, FnQ3)
+	register("iqr", 1, -1, true, FnIQR)
+	register("decile", 2, -1, true, FnDecile)
+	register("outliers", 1, -1, true, FnOutlierCount)
+
+	// Correlation & regression
+	register("zscore", 2, -1, true, FnZScore)
+	register("covariance", 4, -1, true, FnCovariance)
+	register("cov", 4, -1, true, FnCovariance)
+	register("correlation", 4, -1, true, FnCorrelation)
+	register("corr", 4, -1, true, FnCorrelation)
+	register("rsquared", 4, -1, true, FnRSquared)
+	register("r2", 4, -1, true, FnRSquared)
+	register("linreg", 4, -1, true, FnLinReg)
+	register("linregb", 4, -1, true, FnLinRegIntercept)
+	register("spearman", 4, -1, true, FnSpearman)
+	register("autocorr", 2, -1, true, FnAutocorr)
+
+	// Other
+	register("product", 1, -1, true, FnProduct)
+	register("prod", 1, -1, true, FnProduct)
 }
 
 // register is a helper to add functions to the registry.
