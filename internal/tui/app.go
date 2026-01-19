@@ -37,6 +37,13 @@ var (
 	rateFetchingStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#ffa657"))
 	rateSuccessStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("#7ee787"))
 	rateErrorStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("#f85149"))
+
+	// Explain popup styles
+	explainBorderStyle = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#7ee787")).Padding(1, 2)
+	explainTitleStyle  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#7ee787"))
+	explainInputStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("#79c0ff"))
+	explainStepStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("#888"))
+	explainResultStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#7ee787"))
 )
 
 // App is the main model
@@ -54,6 +61,10 @@ type App struct {
 	// Keymap
 	keymap   *keymap.KeyMap
 	showHelp bool
+
+	// Explain mode
+	showExplain bool
+	lastExplain *engine.ExplainResult
 
 	// Yank buffer
 	yankBuffer string
@@ -89,6 +100,8 @@ func NewApp() *App {
 		highlighter:  highlight.Default(),
 		keymap:       km,
 		showHelp:     false,
+		showExplain:  false,
+		lastExplain:  nil,
 		yankBuffer:   "",
 		undoStack:    nil,
 		redoStack:    nil,
@@ -192,6 +205,18 @@ func (a *App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return a, tea.Quit
 	}
 
+	// Close explain popup with any key
+	if a.showExplain {
+		a.showExplain = false
+		return a, nil
+	}
+
+	// Handle Ctrl+E to show explanation
+	if key == "ctrl+e" {
+		a.triggerExplain()
+		return a, nil
+	}
+
 	// Handle Ctrl+R to refresh rates
 	if key == "ctrl+r" {
 		if a.rateStatus.Status != RateStatusFetching {
@@ -227,6 +252,31 @@ func (a *App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return a.executeCommand(cmd)
 }
 
+// triggerExplain shows explanation for the current or previous line.
+func (a *App) triggerExplain() {
+	// Get current line
+	line := strings.TrimSpace(a.lines[a.row])
+
+	// If current line is empty or "explain", use previous non-empty line
+	if line == "" || strings.ToLower(line) == "explain" {
+		for i := a.row - 1; i >= 0; i-- {
+			prevLine := strings.TrimSpace(a.lines[i])
+			if prevLine != "" && !strings.HasPrefix(prevLine, "#") && !strings.HasPrefix(prevLine, "//") {
+				line = prevLine
+				break
+			}
+		}
+	}
+
+	if line == "" {
+		return
+	}
+
+	// Get explanation
+	a.lastExplain = a.engine.Explain(line)
+	a.showExplain = true
+}
+
 func (a *App) handleInsertKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
 
@@ -235,6 +285,26 @@ func (a *App) handleInsertKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if result.Status == keymap.LookupFound {
 		cmd := keymap.NewCommand(result.Action, 1)
 		return a.executeCommand(cmd)
+	}
+
+	// Handle Enter key - check for "explain" command
+	if key == "enter" {
+		line := strings.TrimSpace(a.lines[a.row])
+		if strings.ToLower(line) == "explain" {
+			// Find the previous non-empty line to explain
+			for i := a.row - 1; i >= 0; i-- {
+				prevLine := strings.TrimSpace(a.lines[i])
+				if prevLine != "" && !strings.HasPrefix(prevLine, "#") && !strings.HasPrefix(prevLine, "//") && strings.ToLower(prevLine) != "explain" {
+					a.lastExplain = a.engine.Explain(prevLine)
+					a.showExplain = true
+					return a, nil
+				}
+			}
+		}
+		// Normal newline
+		a.saveUndo()
+		a.newLine()
+		return a, nil
 	}
 
 	// Handle regular character input
@@ -923,6 +993,10 @@ func (a *App) View() string {
 		return a.renderHelp()
 	}
 
+	if a.showExplain {
+		return a.renderExplain()
+	}
+
 	var b strings.Builder
 
 	contentHeight := a.height - 2
@@ -987,6 +1061,53 @@ func (a *App) View() string {
 	return b.String()
 }
 
+func (a *App) renderExplain() string {
+	if a.lastExplain == nil {
+		return a.View()
+	}
+
+	var content strings.Builder
+
+	content.WriteString(explainTitleStyle.Render("Explanation"))
+	content.WriteString("\n\n")
+
+	// Input expression
+	content.WriteString(explainInputStyle.Render("Input: "))
+	if a.lastExplain.Trace != nil {
+		content.WriteString(a.lastExplain.Trace.Input)
+	}
+	content.WriteString("\n\n")
+
+	// Steps
+	if len(a.lastExplain.Steps) > 0 {
+		content.WriteString(explainStepStyle.Render("Steps:"))
+		content.WriteString("\n")
+		for _, step := range a.lastExplain.Steps {
+			content.WriteString(explainStepStyle.Render("  " + step))
+			content.WriteString("\n")
+		}
+		content.WriteString("\n")
+	}
+
+	// One-line explanation
+	if a.lastExplain.Explanation != "" {
+		content.WriteString(explainStepStyle.Render("Calculation: "))
+		content.WriteString(a.lastExplain.Explanation)
+		content.WriteString("\n\n")
+	}
+
+	// Result
+	content.WriteString(explainResultStyle.Render("Result: "))
+	content.WriteString(explainResultStyle.Render(a.lastExplain.Value.String()))
+	content.WriteString("\n")
+
+	content.WriteString(helpFooterStyle.Render("\nPress any key to close"))
+
+	explainBox := explainBorderStyle.Render(content.String())
+
+	return lipgloss.Place(a.width, a.height, lipgloss.Center, lipgloss.Center, explainBox)
+}
+
 func (a *App) renderHelp() string {
 	var content strings.Builder
 
@@ -1019,6 +1140,7 @@ func (a *App) renderHelp() string {
 	content.WriteString("\n")
 	content.WriteString(helpKeyStyle.Render("Esc") + helpDescStyle.Render("Normal mode") + "\n")
 	content.WriteString(helpKeyStyle.Render("?") + helpDescStyle.Render("Toggle help") + "\n")
+	content.WriteString(helpKeyStyle.Render("Ctrl+e") + helpDescStyle.Render("Explain calculation") + "\n")
 	content.WriteString(helpKeyStyle.Render("Ctrl+r") + helpDescStyle.Render("Refresh rates") + "\n")
 	content.WriteString(helpKeyStyle.Render("q") + helpDescStyle.Render("Quit") + "\n")
 	content.WriteString(helpKeyStyle.Render("Ctrl+C") + helpDescStyle.Render("Force quit") + "\n")
@@ -1029,6 +1151,7 @@ func (a *App) renderHelp() string {
 	content.WriteString(helpDescStyle.Render("3dd     → Delete 3 lines") + "\n")
 	content.WriteString(helpDescStyle.Render("d3w     → Delete 3 words") + "\n")
 	content.WriteString(helpDescStyle.Render("y$      → Yank to end of line") + "\n")
+	content.WriteString(helpDescStyle.Render("explain → Show step-by-step") + "\n")
 
 	content.WriteString(helpFooterStyle.Render("\nPress any key to close"))
 
@@ -1093,6 +1216,11 @@ func (a *App) evaluateLine(line string) string {
 		return ""
 	}
 
+	// Don't evaluate "explain" command
+	if strings.ToLower(trimmed) == "explain" {
+		return ""
+	}
+
 	result := a.engine.Eval(line)
 
 	if result.IsEmpty() {
@@ -1133,7 +1261,7 @@ func (a *App) renderStatusBar() string {
 		modeStr += " " + pendingStyle.Render(pending)
 	}
 
-	hint := lipgloss.NewStyle().Foreground(lipgloss.Color("#666")).Render("  ? help  ^s save  ^r rates")
+	hint := lipgloss.NewStyle().Foreground(lipgloss.Color("#666")).Render("  ? help  ^e explain  ^r rates")
 
 	pos := fmt.Sprintf("%d:%d", a.row+1, a.col+1)
 

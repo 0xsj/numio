@@ -6,25 +6,29 @@ import (
 	"strings"
 
 	"github.com/0xsj/numio/internal/ast"
+	"github.com/0xsj/numio/internal/explain"
 	"github.com/0xsj/numio/pkg/types"
 )
 
 // Evaluator evaluates AST nodes and produces values.
 type Evaluator struct {
-	ctx *Context
+	ctx   *Context
+	trace *explain.Builder
 }
 
 // New creates a new Evaluator with a fresh context.
 func New() *Evaluator {
 	return &Evaluator{
-		ctx: NewContext(),
+		ctx:   NewContext(),
+		trace: nil,
 	}
 }
 
 // NewWithContext creates an Evaluator with an existing context.
 func NewWithContext(ctx *Context) *Evaluator {
 	return &Evaluator{
-		ctx: ctx,
+		ctx:   ctx,
+		trace: nil,
 	}
 }
 
@@ -61,6 +65,10 @@ func (e *Evaluator) EvalLine(line *ast.Line) types.Value {
 			lr.IsContinuation = true
 			e.ctx.MarkLastConsumed()
 		}
+		if _, isMultiConvCont := stmt.Expr.(*ast.MultiConversionContinuation); isMultiConvCont {
+			lr.IsContinuation = true
+			e.ctx.MarkLastConsumed()
+		}
 	}
 
 	// Check if this was an assignment
@@ -78,6 +86,77 @@ func (e *Evaluator) EvalLine(line *ast.Line) types.Value {
 // EvalExpr evaluates an expression and returns the result.
 func (e *Evaluator) EvalExpr(expr ast.Expr) types.Value {
 	return e.evalExpr(expr)
+}
+
+// EvalLineWithTrace evaluates a line and returns both result and trace.
+func (e *Evaluator) EvalLineWithTrace(line *ast.Line, input string) (types.Value, *explain.Trace) {
+	if line == nil || line.Stmt == nil {
+		return types.Empty(), nil
+	}
+
+	// Enable tracing
+	e.trace = explain.NewBuilder(input)
+
+	// Evaluate
+	result := e.evalStmt(line.Stmt)
+
+	// Finalize trace
+	trace := e.trace.Finalize(result)
+
+	// Disable tracing
+	e.trace = nil
+
+	// Track result (same as EvalLine)
+	lr := LineResult{
+		Input: line.Raw,
+		Value: result,
+	}
+
+	if stmt, ok := line.Stmt.(*ast.ExprStmt); ok {
+		if _, isCont := stmt.Expr.(*ast.ContinuationExpr); isCont {
+			lr.IsContinuation = true
+			e.ctx.MarkLastConsumed()
+		}
+		if _, isConvCont := stmt.Expr.(*ast.ConversionContinuation); isConvCont {
+			lr.IsContinuation = true
+			e.ctx.MarkLastConsumed()
+		}
+		if _, isMultiConvCont := stmt.Expr.(*ast.MultiConversionContinuation); isMultiConvCont {
+			lr.IsContinuation = true
+			e.ctx.MarkLastConsumed()
+		}
+	}
+
+	if assign, ok := line.Stmt.(*ast.AssignStmt); ok {
+		lr.AssignedVar = assign.Name
+	}
+
+	e.ctx.AddLineResult(lr)
+	e.ctx.SetPrevious(result)
+
+	return result, trace
+}
+
+// EvalExprWithTrace evaluates an expression and returns both result and trace.
+func (e *Evaluator) EvalExprWithTrace(expr ast.Expr, input string) (types.Value, *explain.Trace) {
+	// Enable tracing
+	e.trace = explain.NewBuilder(input)
+
+	// Evaluate
+	result := e.evalExpr(expr)
+
+	// Finalize trace
+	trace := e.trace.Finalize(result)
+
+	// Disable tracing
+	e.trace = nil
+
+	return result, trace
+}
+
+// isTracing returns true if trace recording is active.
+func (e *Evaluator) isTracing() bool {
+	return e.trace != nil && e.trace.IsEnabled()
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -125,25 +204,53 @@ func (e *Evaluator) evalExpr(expr ast.Expr) types.Value {
 	switch ex := expr.(type) {
 	// Literals
 	case *ast.NumberLit:
-		return types.Number(ex.Value)
+		result := types.Number(ex.Value)
+		if e.isTracing() {
+			e.trace.RecordLiteral(ex, result)
+		}
+		return result
 
 	case *ast.PercentLit:
-		return types.Percentage(ex.Value)
+		result := types.Percentage(ex.Value)
+		if e.isTracing() {
+			e.trace.RecordLiteral(ex, result)
+		}
+		return result
 
 	case *ast.CurrencyLit:
-		return types.CurrencyValue(ex.Amount, ex.Currency)
+		result := types.CurrencyValue(ex.Amount, ex.Currency)
+		if e.isTracing() {
+			e.trace.RecordLiteral(ex, result)
+		}
+		return result
 
 	case *ast.UnitLit:
-		return types.UnitValue(ex.Amount, ex.Unit)
+		result := types.UnitValue(ex.Amount, ex.Unit)
+		if e.isTracing() {
+			e.trace.RecordLiteral(ex, result)
+		}
+		return result
 
 	case *ast.MetalLit:
-		return types.MetalValue(ex.Amount, ex.Metal)
+		result := types.MetalValue(ex.Amount, ex.Metal)
+		if e.isTracing() {
+			e.trace.RecordLiteral(ex, result)
+		}
+		return result
 
 	case *ast.CryptoLit:
-		return types.CryptoValue(ex.Amount, ex.Crypto)
+		result := types.CryptoValue(ex.Amount, ex.Crypto)
+		if e.isTracing() {
+			e.trace.RecordLiteral(ex, result)
+		}
+		return result
 
 	case *ast.StringLit:
-		return types.StringValue(ex.Value)
+		result := types.StringValue(ex.Value)
+		if e.isTracing() {
+			e.trace.RecordLiteral(ex, result)
+		}
+		return result
 
 	// References
 	case *ast.Identifier:
@@ -163,11 +270,18 @@ func (e *Evaluator) evalExpr(expr ast.Expr) types.Value {
 	case *ast.ConversionExpr:
 		return e.evalConversion(ex)
 
+	case *ast.MultiConversionExpr:
+		return e.evalMultiConversion(ex)
+
 	case *ast.CallExpr:
 		return e.evalCall(ex)
 
 	case *ast.GroupExpr:
-		return e.evalExpr(ex.Expr)
+		result := e.evalExpr(ex.Expr)
+		if e.isTracing() {
+			e.trace.RecordGroup(result, result)
+		}
+		return result
 
 	// Continuations
 	case *ast.ContinuationExpr:
@@ -175,6 +289,9 @@ func (e *Evaluator) evalExpr(expr ast.Expr) types.Value {
 
 	case *ast.ConversionContinuation:
 		return EvalConversionContinuation(ex, e.ctx)
+
+	case *ast.MultiConversionContinuation:
+		return e.evalMultiConversionContinuation(ex)
 
 	default:
 		return types.Error("unknown expression type")
@@ -188,7 +305,11 @@ func (e *Evaluator) evalExpr(expr ast.Expr) types.Value {
 func (e *Evaluator) evalIdentifier(id *ast.Identifier) types.Value {
 	// Check for math constants first
 	if val, ok := GetMathConstant(id.Name); ok {
-		return types.Number(val)
+		result := types.Number(val)
+		if e.isTracing() {
+			e.trace.RecordVariable(id.Name, result)
+		}
+		return result
 	}
 
 	// Check for variables
@@ -198,8 +319,13 @@ func (e *Evaluator) evalIdentifier(id *ast.Identifier) types.Value {
 			return types.Errorf("undefined variable: %s", id.Name)
 		}
 		// In non-strict mode, treat as zero
-		return types.Number(0)
+		value = types.Number(0)
 	}
+
+	if e.isTracing() {
+		e.trace.RecordVariable(id.Name, value)
+	}
+
 	return value
 }
 
@@ -218,7 +344,13 @@ func (e *Evaluator) evalBinary(expr *ast.BinaryExpr) types.Value {
 		return right
 	}
 
-	return ApplyBinaryOp(expr.Op, left, right, e.ctx)
+	result := ApplyBinaryOp(expr.Op, left, right, e.ctx)
+
+	if e.isTracing() {
+		e.trace.RecordBinaryOp(left, expr.Op, right, result)
+	}
+
+	return result
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -231,7 +363,13 @@ func (e *Evaluator) evalUnary(expr *ast.UnaryExpr) types.Value {
 		return value
 	}
 
-	return ApplyUnaryOp(expr.Op, value)
+	result := ApplyUnaryOp(expr.Op, value)
+
+	if e.isTracing() {
+		e.trace.RecordUnaryOp(expr.Op, value, result)
+	}
+
+	return result
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -258,10 +396,16 @@ func (e *Evaluator) evalPercentOf(expr *ast.PercentOfExpr) types.Value {
 		pct = percent.AsFloat() / 100.0
 	}
 
-	result := value.AsFloat() * pct
+	resultNum := value.AsFloat() * pct
 
 	// Preserve value's type
-	return value.WithAmount(result)
+	result := value.WithAmount(resultNum)
+
+	if e.isTracing() {
+		e.trace.RecordPercentOf(percent, value, result)
+	}
+
+	return result
 }
 
 // evalConversion handles "value in target" expressions.
@@ -271,7 +415,53 @@ func (e *Evaluator) evalConversion(expr *ast.ConversionExpr) types.Value {
 		return value
 	}
 
-	return ConvertValue(value, expr.Target, e.ctx)
+	result := ConvertValue(value, expr.Target, e.ctx)
+
+	if e.isTracing() {
+		e.trace.RecordConversion(value, expr.Target, result)
+	}
+
+	return result
+}
+
+// evalMultiConversion handles "value in target1, target2, ..." expressions.
+func (e *Evaluator) evalMultiConversion(expr *ast.MultiConversionExpr) types.Value {
+	value := e.evalExpr(expr.Value)
+	if value.IsError() {
+		return value
+	}
+
+	return e.convertToMultiple(value, expr.Targets)
+}
+
+// evalMultiConversionContinuation handles "in target1, target2, ..." continuation.
+func (e *Evaluator) evalMultiConversionContinuation(expr *ast.MultiConversionContinuation) types.Value {
+	// Get previous result
+	prev := e.ctx.Previous()
+	if prev.IsEmpty() {
+		return types.Error("no previous result for conversion")
+	}
+	if prev.IsError() {
+		return prev
+	}
+
+	return e.convertToMultiple(prev, expr.Targets)
+}
+
+// convertToMultiple converts a value to multiple targets and returns a MultiValue.
+func (e *Evaluator) convertToMultiple(value types.Value, targets []string) types.Value {
+	results := make([]types.Value, len(targets))
+
+	for i, target := range targets {
+		converted := ConvertValue(value, target, e.ctx)
+		results[i] = converted
+
+		if e.isTracing() {
+			e.trace.RecordConversion(value, target, converted)
+		}
+	}
+
+	return types.MultiValue(results...)
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -291,5 +481,11 @@ func (e *Evaluator) evalCall(expr *ast.CallExpr) types.Value {
 
 	// Look up and call function
 	name := strings.ToLower(expr.Name)
-	return CallFunction(name, args)
+	result := CallFunction(name, args)
+
+	if e.isTracing() {
+		e.trace.RecordFuncCall(expr.Name, args, result)
+	}
+
+	return result
 }

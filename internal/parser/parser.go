@@ -246,7 +246,7 @@ func (p *Parser) parseContinuation() ast.Stmt {
 	}
 }
 
-// parseConversionContinuation parses "in X" or "to X" continuation.
+// parseConversionContinuation parses "in X" or "in X, Y, Z" continuation.
 func (p *Parser) parseConversionContinuation() ast.Stmt {
 	p.advance() // consume "in" or "to"
 
@@ -255,10 +255,28 @@ func (p *Parser) parseConversionContinuation() ast.Stmt {
 		return &ast.EmptyStmt{}
 	}
 
-	target := p.advance().Literal
+	// Parse first target
+	targets := []string{p.advance().Literal}
 
+	// Check for comma-separated additional targets
+	for p.match(token.COMMA) {
+		if !p.check(token.IDENTIFIER) {
+			p.addError("expected unit or currency after ','")
+			break
+		}
+		targets = append(targets, p.advance().Literal)
+	}
+
+	// Single target: use ConversionContinuation
+	if len(targets) == 1 {
+		return &ast.ExprStmt{
+			Expr: &ast.ConversionContinuation{Target: targets[0]},
+		}
+	}
+
+	// Multiple targets: use MultiConversionContinuation
 	return &ast.ExprStmt{
-		Expr: &ast.ConversionContinuation{Target: target},
+		Expr: &ast.MultiConversionContinuation{Targets: targets},
 	}
 }
 
@@ -279,7 +297,7 @@ func (p *Parser) parseBinaryExpr(minPrec int) ast.Expr {
 	}
 
 	for {
-		// Check for binary operator
+		// Check for binary operator (including 'x' as multiplication)
 		if !p.isBinaryOp() {
 			break
 		}
@@ -310,12 +328,29 @@ func (p *Parser) parseBinaryExpr(minPrec int) ast.Expr {
 		left = &ast.BinaryExpr{Left: left, Op: op, Right: right}
 	}
 
-	// Check for conversion suffix: "in EUR", "to miles"
+	// Check for conversion suffix: "in EUR", "in EUR, GBP, JPY"
 	if p.check(token.IN) {
 		p.advance()
 		if p.check(token.IDENTIFIER) {
-			target := p.advance().Literal
-			left = &ast.ConversionExpr{Value: left, Target: target}
+			// Parse first target
+			targets := []string{p.advance().Literal}
+
+			// Check for comma-separated additional targets
+			for p.match(token.COMMA) {
+				if !p.check(token.IDENTIFIER) {
+					p.addError("expected unit or currency after ','")
+					break
+				}
+				targets = append(targets, p.advance().Literal)
+			}
+
+			// Single target: use ConversionExpr
+			if len(targets) == 1 {
+				left = &ast.ConversionExpr{Value: left, Target: targets[0]}
+			} else {
+				// Multiple targets: use MultiConversionExpr
+				left = &ast.MultiConversionExpr{Value: left, Targets: targets}
+			}
 		}
 	}
 
@@ -418,7 +453,8 @@ func (p *Parser) parseNumber() ast.Expr {
 	}
 
 	// Check for unit or currency suffix
-	if p.check(token.IDENTIFIER) {
+	// But NOT if the suffix is 'x' or 'X' (multiplication operator)
+	if p.check(token.IDENTIFIER) && !p.isMultiplicationX() {
 		suffix := p.current().Literal
 
 		// Try currency
@@ -585,13 +621,53 @@ func (p *Parser) parseGroupExpr() ast.Expr {
 // OPERATOR HELPERS
 // ════════════════════════════════════════════════════════════════
 
+// isMultiplicationX returns true if current token is 'x' or 'X' used as multiplication.
+// This is context-sensitive: 'x' is multiplication when:
+// - It's a standalone 'x' or 'X' identifier
+// - The next token looks like it could be a numeric expression (number, identifier, lparen, currency symbol)
+func (p *Parser) isMultiplicationX() bool {
+	if !p.check(token.IDENTIFIER) {
+		return false
+	}
+
+	literal := p.current().Literal
+	if literal != "x" && literal != "X" {
+		return false
+	}
+
+	// Check what comes after 'x' - if it looks like an expression, treat as multiplication
+	next := p.peek()
+	switch next.Type {
+	case token.NUMBER, token.IDENTIFIER, token.LPAREN,
+		token.DOLLAR, token.EURO, token.POUND, token.YEN, token.BITCOIN, token.CURRENCY:
+		return true
+	default:
+		return false
+	}
+}
+
 // isBinaryOp returns true if current token is a binary operator.
 func (p *Parser) isBinaryOp() bool {
-	return p.checkAny(token.PLUS, token.MINUS, token.STAR, token.SLASH, token.CARET, token.POWER)
+	// Standard operators
+	if p.checkAny(token.PLUS, token.MINUS, token.STAR, token.SLASH, token.CARET, token.POWER) {
+		return true
+	}
+
+	// Check for 'x' or 'X' as multiplication
+	if p.isMultiplicationX() {
+		return true
+	}
+
+	return false
 }
 
 // currentBinaryOp returns the current token as a BinaryOp.
 func (p *Parser) currentBinaryOp() ast.BinaryOp {
+	// Check for 'x' or 'X' as multiplication first
+	if p.isMultiplicationX() {
+		return ast.OpMul
+	}
+
 	switch p.current().Type {
 	case token.PLUS:
 		return ast.OpAdd

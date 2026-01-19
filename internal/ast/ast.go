@@ -227,6 +227,18 @@ func (c *CryptoLit) String() string {
 	return formatFloat(c.Amount)
 }
 
+// StringLit represents a string literal.
+type StringLit struct {
+	Value string
+}
+
+func (s *StringLit) node() {}
+func (s *StringLit) expr() {}
+
+func (s *StringLit) String() string {
+	return `"` + s.Value + `"`
+}
+
 // ════════════════════════════════════════════════════════════════
 // EXPRESSIONS - REFERENCES
 // ════════════════════════════════════════════════════════════════
@@ -370,6 +382,20 @@ func (c *ConversionExpr) String() string {
 	return c.Value.String() + " in " + c.Target
 }
 
+// MultiConversionExpr represents conversion to multiple targets.
+// e.g., "$100 in EUR, GBP, JPY" or "1 mile in km, ft, m"
+type MultiConversionExpr struct {
+	Value   Expr     // The value to convert
+	Targets []string // List of target units/currencies
+}
+
+func (m *MultiConversionExpr) node() {}
+func (m *MultiConversionExpr) expr() {}
+
+func (m *MultiConversionExpr) String() string {
+	return m.Value.String() + " in " + strings.Join(m.Targets, ", ")
+}
+
 // CallExpr represents a function call (e.g., sum(1, 2, 3), sqrt(16)).
 type CallExpr struct {
 	Name string
@@ -428,6 +454,19 @@ func (c *ConversionContinuation) expr() {}
 
 func (c *ConversionContinuation) String() string {
 	return "in " + c.Target
+}
+
+// MultiConversionContinuation represents "in X, Y, Z" continuing from previous.
+// e.g., "in EUR, GBP, JPY" converts previous result to multiple currencies.
+type MultiConversionContinuation struct {
+	Targets []string
+}
+
+func (m *MultiConversionContinuation) node() {}
+func (m *MultiConversionContinuation) expr() {}
+
+func (m *MultiConversionContinuation) String() string {
+	return "in " + strings.Join(m.Targets, ", ")
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -588,6 +627,9 @@ func Walk(v Visitor, node Node) {
 	case *ConversionExpr:
 		Walk(v, n.Value)
 
+	case *MultiConversionExpr:
+		Walk(v, n.Value)
+
 	case *CallExpr:
 		for _, arg := range n.Args {
 			Walk(v, arg)
@@ -630,7 +672,7 @@ func IsLiteral(e Expr) bool {
 // IsContinuation returns true if the expression is a continuation.
 func IsContinuation(e Expr) bool {
 	switch e.(type) {
-	case *ContinuationExpr, *ConversionContinuation:
+	case *ContinuationExpr, *ConversionContinuation, *MultiConversionContinuation:
 		return true
 	default:
 		return false
@@ -656,6 +698,8 @@ func GetIdentifiers(e Expr) []string {
 			collect(n.Value)
 		case *ConversionExpr:
 			collect(n.Value)
+		case *MultiConversionExpr:
+			collect(n.Value)
 		case *CallExpr:
 			for _, arg := range n.Args {
 				collect(arg)
@@ -679,16 +723,4 @@ func GetIdentifiers(e Expr) []string {
 
 	collect(e)
 	return ids
-}
-
-// StringLit represents a string literal.
-type StringLit struct {
-	Value string
-}
-
-func (s *StringLit) node() {}
-func (s *StringLit) expr() {}
-
-func (s *StringLit) String() string {
-	return `"` + s.Value + `"`
 }

@@ -9,6 +9,7 @@ import (
 
 	"github.com/0xsj/numio/internal/ast"
 	"github.com/0xsj/numio/internal/eval"
+	"github.com/0xsj/numio/internal/explain"
 	"github.com/0xsj/numio/internal/nlp"
 	"github.com/0xsj/numio/internal/parser"
 	"github.com/0xsj/numio/pkg/cache"
@@ -171,6 +172,138 @@ func (e *Engine) EvalWithNLPInfo(input string) (types.Value, *nlp.ProcessResult)
 
 	line.Raw = input
 	return e.evaluator.EvalLine(line), nlpResult
+}
+
+// ════════════════════════════════════════════════════════════════
+// EXPLAIN MODE
+// ════════════════════════════════════════════════════════════════
+
+// ExplainResult holds the result of an explained evaluation.
+type ExplainResult struct {
+	// Value is the computed result
+	Value types.Value
+
+	// Trace is the evaluation trace (nil if tracing failed)
+	Trace *explain.Trace
+
+	// Explanation is the formatted explanation string
+	Explanation string
+
+	// Steps is the list of step descriptions
+	Steps []string
+}
+
+// Explain evaluates an expression and returns a step-by-step explanation.
+func (e *Engine) Explain(input string) *ExplainResult {
+	trimmed := strings.TrimSpace(input)
+	if trimmed == "" {
+		return &ExplainResult{Value: types.Empty()}
+	}
+
+	if strings.HasPrefix(trimmed, "#") || strings.HasPrefix(trimmed, "//") {
+		return &ExplainResult{Value: types.Empty()}
+	}
+
+	// Process through NLP first
+	processed := input
+	if e.nlp != nil && e.nlp.IsEnabled() {
+		processed, _ = e.nlp.Process(input)
+	}
+
+	// Parse
+	line, errs := parser.ParseLine(processed)
+	if len(errs) > 0 {
+		return &ExplainResult{
+			Value:       types.Error(errs[0].Message),
+			Explanation: "Parse error: " + errs[0].Message,
+		}
+	}
+
+	line.Raw = input
+
+	// Evaluate with tracing
+	value, trace := e.evaluator.EvalLineWithTrace(line, input)
+
+	// Build result
+	result := &ExplainResult{
+		Value: value,
+		Trace: trace,
+	}
+
+	// Format explanation
+	if trace != nil {
+		result.Explanation = explain.FormatOneLine(trace)
+		result.Steps = explain.DefaultFormatter().FormatSteps(trace)
+	} else {
+		result.Explanation = value.String()
+	}
+
+	return result
+}
+
+// ExplainExpr evaluates an expression (without affecting state) and returns explanation.
+func (e *Engine) ExplainExpr(input string) *ExplainResult {
+	trimmed := strings.TrimSpace(input)
+	if trimmed == "" {
+		return &ExplainResult{Value: types.Empty()}
+	}
+
+	// Process through NLP first
+	processed := input
+	if e.nlp != nil && e.nlp.IsEnabled() {
+		processed, _ = e.nlp.Process(input)
+	}
+
+	// Parse expression
+	expr, errs := parser.ParseExpr(processed)
+	if len(errs) > 0 {
+		return &ExplainResult{
+			Value:       types.Error(errs[0].Message),
+			Explanation: "Parse error: " + errs[0].Message,
+		}
+	}
+
+	// Clone context to avoid affecting state
+	ctx := e.evaluator.Context().Clone()
+	ctx.SetRateCacheAdapter(&rateCacheAdapter{rc: e.rateCache})
+	tempEval := eval.NewWithContext(ctx)
+
+	// Evaluate with tracing
+	value, trace := tempEval.EvalExprWithTrace(expr, input)
+
+	// Build result
+	result := &ExplainResult{
+		Value: value,
+		Trace: trace,
+	}
+
+	// Format explanation
+	if trace != nil {
+		result.Explanation = explain.FormatOneLine(trace)
+		result.Steps = explain.DefaultFormatter().FormatSteps(trace)
+	} else {
+		result.Explanation = value.String()
+	}
+
+	return result
+}
+
+// ExplainVerbose returns a detailed multi-line explanation.
+func (e *Engine) ExplainVerbose(input string) string {
+	result := e.Explain(input)
+	if result.Trace != nil {
+		return explain.FormatVerbose(result.Trace)
+	}
+	return result.Value.String()
+}
+
+// ExplainAsTree returns the explanation as an ASCII tree.
+func (e *Engine) ExplainAsTree(input string) string {
+	result := e.Explain(input)
+	if result.Trace != nil {
+		return explain.FormatAsTree(result.Trace)
+	}
+	return result.Value.String()
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -619,4 +752,9 @@ func QuickEval(input string) types.Value {
 // QuickEvalMultiple evaluates multiple expressions with a fresh engine.
 func QuickEvalMultiple(inputs []string) []types.Value {
 	return New().EvalMultiple(inputs)
+}
+
+// QuickExplain explains an expression with a fresh engine.
+func QuickExplain(input string) *ExplainResult {
+	return New().Explain(input)
 }

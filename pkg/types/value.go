@@ -21,6 +21,7 @@ const (
 	ValueDate                        // Date/time value
 	ValueString                      // String value: sparklines, text
 	ValueError                       // Error during evaluation
+	ValueMulti                       // Multiple values (comparison result)
 )
 
 // String returns the kind name.
@@ -46,6 +47,8 @@ func (k ValueKind) String() string {
 		return "string"
 	case ValueError:
 		return "error"
+	case ValueMulti:
+		return "multi"
 	default:
 		return "unknown"
 	}
@@ -68,6 +71,9 @@ type Value struct {
 	Metal  *Metal     // For ValueMetal
 	Crypto *Crypto    // For ValueCrypto
 	Time   *time.Time // For ValueDate
+
+	// Multiple values (for ValueMulti - comparison results)
+	Values []Value
 
 	// Error message (for ValueError)
 	Err string
@@ -177,6 +183,16 @@ func StringValue(s string) Value {
 	}
 }
 
+// MultiValue creates a multi-value containing multiple conversion results.
+func MultiValue(values ...Value) Value {
+	// Filter out empty and error values for the primary display
+	// but keep them in the list for completeness
+	return Value{
+		Kind:   ValueMulti,
+		Values: values,
+	}
+}
+
 // Error creates an error value.
 func Error(message string) Value {
 	return Value{
@@ -282,13 +298,22 @@ func (v Value) IsString() bool {
 	return v.Kind == ValueString
 }
 
+// IsMulti returns true if the value contains multiple values.
+func (v Value) IsMulti() bool {
+	return v.Kind == ValueMulti
+}
+
 // ════════════════════════════════════════════════════════════════
 // ACCESSORS
 // ════════════════════════════════════════════════════════════════
 
 // AsFloat returns the numeric value as float64.
 // Returns 0 for non-numeric values.
+// For multi-values, returns the first value's numeric amount.
 func (v Value) AsFloat() float64 {
+	if v.Kind == ValueMulti && len(v.Values) > 0 {
+		return v.Values[0].AsFloat()
+	}
 	return v.Num
 }
 
@@ -318,6 +343,23 @@ func (v Value) AsPercentageDisplay() float64 {
 	return v.Num
 }
 
+// AsValues returns the contained values for a multi-value.
+// Returns nil for non-multi values.
+func (v Value) AsValues() []Value {
+	if v.Kind == ValueMulti {
+		return v.Values
+	}
+	return nil
+}
+
+// First returns the first value from a multi-value, or the value itself.
+func (v Value) First() Value {
+	if v.Kind == ValueMulti && len(v.Values) > 0 {
+		return v.Values[0]
+	}
+	return v
+}
+
 // ErrorMessage returns the error message, or empty string if not an error.
 func (v Value) ErrorMessage() string {
 	return v.Err
@@ -329,6 +371,17 @@ func (v Value) UnitType() (UnitType, bool) {
 		return v.Unit.Type, true
 	}
 	return 0, false
+}
+
+// Len returns the number of values (1 for single values, n for multi).
+func (v Value) Len() int {
+	if v.Kind == ValueMulti {
+		return len(v.Values)
+	}
+	if v.Kind == ValueEmpty {
+		return 0
+	}
+	return 1
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -408,9 +461,52 @@ func (v Value) String() string {
 	case ValueError:
 		return "Error: " + v.Err
 
+	case ValueMulti:
+		return formatMultiValue(v.Values)
+
 	default:
 		return "?"
 	}
+}
+
+// formatMultiValue formats a slice of values for display.
+func formatMultiValue(values []Value) string {
+	if len(values) == 0 {
+		return ""
+	}
+
+	parts := make([]string, 0, len(values))
+	for _, val := range values {
+		if !val.IsEmpty() && !val.IsError() {
+			parts = append(parts, val.String())
+		} else if val.IsError() {
+			// Include error indicator
+			parts = append(parts, "?")
+		}
+	}
+
+	return strings.Join(parts, ", ")
+}
+
+// StringCompact returns a compact representation for multi-values.
+// Uses shorter format for display in limited space.
+func (v Value) StringCompact() string {
+	if v.Kind != ValueMulti {
+		return v.String()
+	}
+
+	if len(v.Values) == 0 {
+		return ""
+	}
+
+	parts := make([]string, 0, len(v.Values))
+	for _, val := range v.Values {
+		if !val.IsEmpty() && !val.IsError() {
+			parts = append(parts, val.String())
+		}
+	}
+
+	return strings.Join(parts, " | ")
 }
 
 // formatNumber formats a number with appropriate precision.
@@ -530,6 +626,11 @@ func (v Value) CanCombineWith(other Value) bool {
 
 	// Strings can't combine with arithmetic
 	if v.IsString() || other.IsString() {
+		return false
+	}
+
+	// Multi-values can't combine directly
+	if v.IsMulti() || other.IsMulti() {
 		return false
 	}
 
@@ -664,6 +765,14 @@ func (v Value) ToMap() map[string]any {
 
 	case ValueError:
 		m["error"] = v.Err
+
+	case ValueMulti:
+		vals := make([]map[string]any, len(v.Values))
+		for i, val := range v.Values {
+			vals[i] = val.ToMap()
+		}
+		m["values"] = vals
+		m["count"] = len(v.Values)
 	}
 
 	m["display"] = v.String()
