@@ -30,10 +30,12 @@ const (
 	RPAREN // )
 	EQUALS // =
 	COMMA  // ,
+	COLON  // :
 
 	// Keywords
-	IN // in, to (for conversions)
-	OF // of (for "20% of 150")
+	IN  // in, to (for conversions)
+	OF  // of (for "20% of 150")
+	DEF // def (for function definitions)
 
 	// Currency symbols
 	DOLLAR   // $
@@ -68,8 +70,10 @@ var typeNames = map[Type]string{
 	RPAREN:     "RPAREN",
 	EQUALS:     "EQUALS",
 	COMMA:      "COMMA",
+	COLON:      "COLON",
 	IN:         "IN",
 	OF:         "OF",
+	DEF:        "DEF",
 	DOLLAR:     "DOLLAR",
 	EURO:       "EURO",
 	POUND:      "POUND",
@@ -126,14 +130,15 @@ func (t Token) IsCurrencySymbol() bool {
 
 // IsKeyword checks if the token is a keyword.
 func (t Token) IsKeyword() bool {
-	return t.IsOneOf(IN, OF)
+	return t.IsOneOf(IN, OF, DEF)
 }
 
 // Keywords maps keyword strings to token types.
 var Keywords = map[string]Type{
-	"in": IN,
-	"to": IN, // "to" is an alias for "in"
-	"of": OF,
+	"in":  IN,
+	"to":  IN, // "to" is an alias for "in"
+	"of":  OF,
+	"def": DEF,
 }
 
 // LookupIdentifier checks if an identifier is a keyword.
