@@ -25,6 +25,9 @@ type Context struct {
 	// Variables map
 	variables map[string]types.Value
 
+	// User-defined functions
+	userFuncs *UserFuncRegistry
+
 	// Rate cache adapter for currency/crypto conversions
 	rateCache RateCacheAdapter
 
@@ -52,6 +55,7 @@ type LineResult struct {
 func NewContext() *Context {
 	return &Context{
 		variables: make(map[string]types.Value),
+		userFuncs: NewUserFuncRegistry(),
 		rateCache: nil,
 		previous:  types.Empty(),
 		lines:     nil,
@@ -154,6 +158,46 @@ func (c *Context) ClearVariables() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.variables = make(map[string]types.Value)
+}
+
+// ════════════════════════════════════════════════════════════════
+// USER FUNCTION OPERATIONS
+// ════════════════════════════════════════════════════════════════
+
+// UserFuncs returns the user function registry.
+func (c *Context) UserFuncs() *UserFuncRegistry {
+	return c.userFuncs
+}
+
+// DefineFunc registers a user-defined function.
+// Returns an error message if the function cannot be defined.
+func (c *Context) DefineFunc(fn *UserFunction) string {
+	return c.userFuncs.Define(fn)
+}
+
+// GetFunc retrieves a user-defined function by name.
+func (c *Context) GetFunc(name string) (*UserFunction, bool) {
+	return c.userFuncs.Get(name)
+}
+
+// HasFunc checks if a user-defined function exists.
+func (c *Context) HasFunc(name string) bool {
+	return c.userFuncs.Has(name)
+}
+
+// DeleteFunc removes a user-defined function.
+func (c *Context) DeleteFunc(name string) bool {
+	return c.userFuncs.Delete(name)
+}
+
+// ListFuncs returns all user-defined function names.
+func (c *Context) ListFuncs() []string {
+	return c.userFuncs.List()
+}
+
+// ClearFuncs removes all user-defined functions.
+func (c *Context) ClearFuncs() {
+	c.userFuncs.Clear()
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -449,6 +493,7 @@ func (c *Context) SetStrict(strict bool) {
 // ════════════════════════════════════════════════════════════════
 
 // Clear resets the context to initial state.
+// Does NOT clear user-defined functions (use ClearFuncs for that).
 func (c *Context) Clear() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -456,6 +501,12 @@ func (c *Context) Clear() {
 	c.variables = make(map[string]types.Value)
 	c.previous = types.Empty()
 	c.lines = nil
+}
+
+// ClearAll resets everything including user-defined functions.
+func (c *Context) ClearAll() {
+	c.Clear()
+	c.ClearFuncs()
 }
 
 // Reset is an alias for Clear.
@@ -474,6 +525,7 @@ func (c *Context) Clone() *Context {
 
 	clone := &Context{
 		variables: make(map[string]types.Value, len(c.variables)),
+		userFuncs: c.userFuncs.Clone(),
 		rateCache: nil, // Will be set by engine
 		previous:  c.previous,
 		lines:     make([]LineResult, len(c.lines)),
@@ -491,10 +543,11 @@ func (c *Context) Clone() *Context {
 
 // Snapshot returns a read-only snapshot of the current state.
 type Snapshot struct {
-	Variables map[string]types.Value
-	Previous  types.Value
-	Lines     []LineResult
-	Total     types.Value
+	Variables     map[string]types.Value
+	UserFuncNames []string
+	Previous      types.Value
+	Lines         []LineResult
+	Total         types.Value
 }
 
 // Snapshot creates a snapshot of the current state.
@@ -511,9 +564,10 @@ func (c *Context) Snapshot() Snapshot {
 	copy(lines, c.lines)
 
 	return Snapshot{
-		Variables: vars,
-		Previous:  c.previous,
-		Lines:     lines,
-		Total:     c.calculateTotal(),
+		Variables:     vars,
+		UserFuncNames: c.userFuncs.List(),
+		Previous:      c.previous,
+		Lines:         lines,
+		Total:         c.calculateTotal(),
 	}
 }

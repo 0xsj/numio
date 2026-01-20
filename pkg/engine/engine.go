@@ -414,6 +414,91 @@ func (e *Engine) HasVariable(name string) bool {
 }
 
 // ════════════════════════════════════════════════════════════════
+// USER-DEFINED FUNCTIONS
+// ════════════════════════════════════════════════════════════════
+
+// UserFunction exposes user function metadata from the eval package.
+type UserFunction = eval.UserFunction
+
+// DefineFunction defines a user function from a source string.
+// Input should be in the form: "def name(params): body"
+// Returns the function name on success, or an error message.
+//
+// Example:
+//
+//	err := engine.DefineFunction("def double(x): x * 2")
+//	err := engine.DefineFunction("def area(w, h): w * h")
+func (e *Engine) DefineFunction(source string) error {
+	// Parse the function definition
+	funcDef, errs := parser.ParseFuncDef(source)
+	if len(errs) > 0 {
+		return errs[0] // *errors.Error already implements error
+	}
+
+	// Create user function and register
+	fn := eval.NewUserFunction(funcDef)
+	if errMsg := e.evaluator.Context().DefineFunc(fn); errMsg != "" {
+		return errors.EvalError(errMsg)
+	}
+
+	return nil
+}
+
+// DefineFunctionParts defines a user function from its components.
+// This is useful when you have the parts separately (e.g., from UI input).
+//
+// Example:
+//
+//	err := engine.DefineFunctionParts("double", []string{"x"}, "x * 2")
+func (e *Engine) DefineFunctionParts(name string, params []string, body string) error {
+	// Construct source and parse
+	source := "def " + name + "(" + strings.Join(params, ", ") + "): " + body
+	return e.DefineFunction(source)
+}
+
+// GetUserFunction retrieves a user-defined function by name.
+func (e *Engine) GetUserFunction(name string) (*UserFunction, bool) {
+	return e.evaluator.Context().GetFunc(name)
+}
+
+// HasUserFunction checks if a user-defined function exists.
+func (e *Engine) HasUserFunction(name string) bool {
+	return e.evaluator.Context().HasFunc(name)
+}
+
+// DeleteUserFunction removes a user-defined function.
+// Returns true if the function existed and was deleted.
+func (e *Engine) DeleteUserFunction(name string) bool {
+	return e.evaluator.Context().DeleteFunc(name)
+}
+
+// ListUserFunctions returns all user-defined function names.
+func (e *Engine) ListUserFunctions() []string {
+	return e.evaluator.Context().ListFuncs()
+}
+
+// UserFunctionCount returns the number of user-defined functions.
+func (e *Engine) UserFunctionCount() int {
+	return len(e.evaluator.Context().ListFuncs())
+}
+
+// ClearUserFunctions removes all user-defined functions.
+func (e *Engine) ClearUserFunctions() {
+	e.evaluator.Context().ClearFuncs()
+}
+
+// UserFunctionRegistry returns the internal function registry.
+// This provides lower-level access for advanced use cases.
+func (e *Engine) UserFunctionRegistry() *eval.UserFuncRegistry {
+	return e.evaluator.Context().UserFuncs()
+}
+
+// IsReservedFunctionName checks if a name would conflict with built-ins.
+func IsReservedFunctionName(name string) bool {
+	return eval.IsReservedFunctionName(name)
+}
+
+// ════════════════════════════════════════════════════════════════
 // PREVIOUS RESULT
 // ════════════════════════════════════════════════════════════════
 
@@ -577,9 +662,14 @@ func (e *Engine) SetStrict(strict bool) {
 
 // Clear resets the engine to initial state.
 // Clears variables, line history, and previous result.
-// Does not clear the rate cache.
+// Does not clear the rate cache or user-defined functions.
 func (e *Engine) Clear() {
 	e.evaluator.Context().Clear()
+}
+
+// ClearAll resets everything including user-defined functions.
+func (e *Engine) ClearAll() {
+	e.evaluator.Context().ClearAll()
 }
 
 // ClearVariables removes all user-defined variables.
@@ -623,9 +713,20 @@ func (e *Engine) ParseExpr(input string) (ast.Expr, []*errors.Error) {
 	return parser.ParseExpr(input)
 }
 
+// ParseFuncDef parses a function definition without registering it.
+func (e *Engine) ParseFuncDef(input string) (*ast.FuncDefStmt, []*errors.Error) {
+	return parser.ParseFuncDef(input)
+}
+
 // IsValidExpression checks if an input is a valid expression.
 func (e *Engine) IsValidExpression(input string) bool {
 	_, errs := parser.ParseLine(input)
+	return len(errs) == 0
+}
+
+// IsValidFunctionDef checks if an input is a valid function definition.
+func (e *Engine) IsValidFunctionDef(input string) bool {
+	_, errs := parser.ParseFuncDef(input)
 	return len(errs) == 0
 }
 
@@ -737,6 +838,16 @@ func AllCryptos() []types.Crypto {
 // AllMetals returns all curated metals.
 func AllMetals() []types.Metal {
 	return types.AllMetals()
+}
+
+// BuiltinFunctionCount returns the number of built-in functions.
+func BuiltinFunctionCount() int {
+	return eval.BuiltinFunctionCount()
+}
+
+// ListBuiltinFunctions returns all built-in function names.
+func ListBuiltinFunctions() []string {
+	return eval.ListFunctions()
 }
 
 // ════════════════════════════════════════════════════════════════

@@ -58,7 +58,9 @@ func buildFunctionNamesList() {
 // FUNCTION DISPATCH
 // ════════════════════════════════════════════════════════════════
 
-// CallFunction looks up and calls a function by name.
+// CallFunction looks up and calls a built-in function by name.
+// Note: This only handles built-in functions. User-defined functions
+// are handled by the Evaluator which checks them first.
 func CallFunction(name string, args []types.Value) types.Value {
 	name = strings.ToLower(name)
 
@@ -108,25 +110,30 @@ func autocorrectFunctionName(name string) string {
 	return ""
 }
 
-// HasFunction checks if a function exists.
+// HasFunction checks if a built-in function exists.
 func HasFunction(name string) bool {
 	_, ok := FunctionRegistry[strings.ToLower(name)]
 	return ok
 }
 
-// GetFunction returns a function definition.
+// GetFunction returns a built-in function definition.
 func GetFunction(name string) (FunctionDef, bool) {
 	fn, ok := FunctionRegistry[strings.ToLower(name)]
 	return fn, ok
 }
 
-// ListFunctions returns all registered function names.
+// ListFunctions returns all registered built-in function names.
 func ListFunctions() []string {
 	names := make([]string, 0, len(FunctionRegistry))
 	for name := range FunctionRegistry {
 		names = append(names, name)
 	}
 	return names
+}
+
+// BuiltinFunctionCount returns the number of built-in functions.
+func BuiltinFunctionCount() int {
+	return len(FunctionRegistry)
 }
 
 // SuggestFunction returns function name suggestions for a misspelled name.
@@ -145,6 +152,37 @@ func AutocorrectFunction(name string) string {
 
 	// Try autocorrect with distance 1 (very confident)
 	return fuzzyMatcher.AutocorrectWithThreshold(name, functionNames, 1)
+}
+
+// ════════════════════════════════════════════════════════════════
+// RESERVED NAME CHECKING
+// ════════════════════════════════════════════════════════════════
+
+// IsReservedFunctionName checks if a name is reserved (built-in function or keyword).
+// This is used to prevent user-defined functions from shadowing built-ins.
+func IsReservedFunctionName(name string) bool {
+	lower := strings.ToLower(name)
+
+	// Check built-in functions
+	if HasFunction(lower) {
+		return true
+	}
+
+	// Check math constants
+	if _, ok := GetMathConstant(lower); ok {
+		return true
+	}
+
+	// Check reserved keywords
+	reserved := map[string]bool{
+		"def": true, "in": true, "to": true, "of": true,
+		"true": true, "false": true, "nil": true, "null": true,
+		"if": true, "then": true, "else": true, // Reserved for future
+		"and": true, "or": true, "not": true, // Reserved for future
+		"for": true, "while": true, "return": true, // Reserved for future
+	}
+
+	return reserved[lower]
 }
 
 // ════════════════════════════════════════════════════════════════

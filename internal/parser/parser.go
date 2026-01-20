@@ -20,6 +20,7 @@ type Parser struct {
 	tokens []token.Token
 	pos    int
 	errors []*errors.Error
+	input  string // Original input (for raw source capture)
 }
 
 // New creates a new Parser for the given input.
@@ -30,6 +31,7 @@ func New(input string) *Parser {
 		tokens: l.Tokenize(),
 		pos:    0,
 		errors: nil,
+		input:  input,
 	}
 }
 
@@ -39,6 +41,7 @@ func NewFromTokens(tokens []token.Token) *Parser {
 		tokens: tokens,
 		pos:    0,
 		errors: nil,
+		input:  "",
 	}
 }
 
@@ -70,6 +73,14 @@ func (p *Parser) peek() token.Token {
 		return token.New(token.EOF, "", -1)
 	}
 	return p.tokens[p.pos+1]
+}
+
+// peekN returns the token N positions ahead without advancing.
+func (p *Parser) peekN(n int) token.Token {
+	if p.pos+n >= len(p.tokens) {
+		return token.New(token.EOF, "", -1)
+	}
+	return p.tokens[p.pos+n]
 }
 
 // advance moves to the next token and returns the previous one.
@@ -191,8 +202,13 @@ func (p *Parser) ParseLines() []*ast.Line {
 // STATEMENT PARSING
 // ════════════════════════════════════════════════════════════════
 
-// parseStatement parses a statement (assignment or expression).
+// parseStatement parses a statement (assignment, function def, or expression).
 func (p *Parser) parseStatement() ast.Stmt {
+	// Check for function definition: def name(params): body
+	if p.check(token.DEF) {
+		return p.parseFuncDef()
+	}
+
 	// Check for assignment: identifier = expr
 	if p.check(token.IDENTIFIER) && p.peek().Type == token.EQUALS {
 		return p.parseAssignment()
@@ -215,6 +231,103 @@ func (p *Parser) parseStatement() ast.Stmt {
 	}
 
 	return &ast.ExprStmt{Expr: expr}
+}
+
+// parseFuncDef parses a function definition: def name(params): body
+func (p *Parser) parseFuncDef() ast.Stmt {
+	startPos := p.current().Pos
+	p.advance() // consume 'def'
+
+	// Expect function name
+	if !p.check(token.IDENTIFIER) {
+		p.addError("expected function name after 'def'")
+		return &ast.EmptyStmt{}
+	}
+	name := p.advance().Literal
+
+	// Validate function name
+	if err := ast.ValidateFuncName(name); err != "" {
+		p.addError(err)
+		return &ast.EmptyStmt{}
+	}
+
+	// Expect opening parenthesis
+	if !p.expect(token.LPAREN, "expected '(' after function name") {
+		return &ast.EmptyStmt{}
+	}
+
+	// Parse parameters
+	params := p.parseFuncParams()
+
+	// Validate parameters
+	if err := ast.ValidateParams(params); err != "" {
+		p.addError(err)
+		return &ast.EmptyStmt{}
+	}
+
+	// Expect closing parenthesis
+	if !p.expect(token.RPAREN, "expected ')' after parameters") {
+		return &ast.EmptyStmt{}
+	}
+
+	// Expect colon
+	if !p.expect(token.COLON, "expected ':' after parameter list") {
+		return &ast.EmptyStmt{}
+	}
+
+	// Parse body expression
+	body := p.parseExpression()
+	if body == nil {
+		p.addError("expected expression after ':'")
+		return &ast.EmptyStmt{}
+	}
+
+	// Calculate raw source if we have the original input
+	raw := ""
+	if p.input != "" {
+		endPos := p.current().Pos
+		if endPos < 0 {
+			endPos = len(p.input)
+		}
+		if startPos >= 0 && endPos <= len(p.input) {
+			raw = strings.TrimSpace(p.input[startPos:endPos])
+		}
+	}
+
+	return &ast.FuncDefStmt{
+		Name:   name,
+		Params: params,
+		Body:   body,
+		Raw:    raw,
+	}
+}
+
+// parseFuncParams parses function parameter list (without parentheses).
+func (p *Parser) parseFuncParams() []string {
+	var params []string
+
+	// Empty parameter list
+	if p.check(token.RPAREN) {
+		return params
+	}
+
+	// Parse first parameter
+	if !p.check(token.IDENTIFIER) {
+		p.addError("expected parameter name")
+		return params
+	}
+	params = append(params, p.advance().Literal)
+
+	// Parse remaining parameters
+	for p.match(token.COMMA) {
+		if !p.check(token.IDENTIFIER) {
+			p.addError("expected parameter name after ','")
+			break
+		}
+		params = append(params, p.advance().Literal)
+	}
+
+	return params
 }
 
 // parseAssignment parses a variable assignment.
@@ -432,7 +545,7 @@ func (p *Parser) parsePrimaryExpr() ast.Expr {
 
 	default:
 		// Don't error on valid statement terminators
-		if tok.Type != token.RPAREN && tok.Type != token.COMMA {
+		if tok.Type != token.RPAREN && tok.Type != token.COMMA && tok.Type != token.COLON {
 			p.addErrorf("unexpected token: %s", tok.Literal)
 		}
 		return nil
@@ -720,6 +833,23 @@ func ParseExpr(input string) (ast.Expr, []*errors.Error) {
 	return expr, p.Errors()
 }
 
+// ParseFuncDef parses a function definition string.
+// Returns the FuncDefStmt and any errors.
+func ParseFuncDef(input string) (*ast.FuncDefStmt, []*errors.Error) {
+	p := New(input)
+	line := p.ParseLine()
+	if len(p.errors) > 0 {
+		return nil, p.errors
+	}
+
+	funcDef, ok := line.Stmt.(*ast.FuncDefStmt)
+	if !ok {
+		return nil, []*errors.Error{errors.ParseError("expected function definition")}
+	}
+
+	return funcDef, nil
+}
+
 // MustParseLine parses a line, panicking on error (for tests).
 func MustParseLine(input string) *ast.Line {
 	line, errs := ParseLine(input)
@@ -736,6 +866,15 @@ func MustParseExpr(input string) ast.Expr {
 		panic("parse error: " + errs[0].Error())
 	}
 	return expr
+}
+
+// MustParseFuncDef parses a function definition, panicking on error (for tests).
+func MustParseFuncDef(input string) *ast.FuncDefStmt {
+	funcDef, errs := ParseFuncDef(input)
+	if len(errs) > 0 {
+		panic("parse error: " + errs[0].Error())
+	}
+	return funcDef
 }
 
 // parseString parses a string literal.

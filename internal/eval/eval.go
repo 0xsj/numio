@@ -14,21 +14,26 @@ import (
 type Evaluator struct {
 	ctx   *Context
 	trace *explain.Builder
+
+	// Local bindings for function evaluation (parameter values)
+	localBindings map[string]types.Value
 }
 
 // New creates a new Evaluator with a fresh context.
 func New() *Evaluator {
 	return &Evaluator{
-		ctx:   NewContext(),
-		trace: nil,
+		ctx:           NewContext(),
+		trace:         nil,
+		localBindings: nil,
 	}
 }
 
 // NewWithContext creates an Evaluator with an existing context.
 func NewWithContext(ctx *Context) *Evaluator {
 	return &Evaluator{
-		ctx:   ctx,
-		trace: nil,
+		ctx:           ctx,
+		trace:         nil,
+		localBindings: nil,
 	}
 }
 
@@ -48,6 +53,11 @@ func (e *Evaluator) EvalLine(line *ast.Line) types.Value {
 	}
 
 	result := e.evalStmt(line.Stmt)
+
+	// Don't track function definitions in line results
+	if _, isFuncDef := line.Stmt.(*ast.FuncDefStmt); isFuncDef {
+		return result
+	}
 
 	// Track result
 	lr := LineResult{
@@ -105,6 +115,11 @@ func (e *Evaluator) EvalLineWithTrace(line *ast.Line, input string) (types.Value
 
 	// Disable tracing
 	e.trace = nil
+
+	// Don't track function definitions in line results
+	if _, isFuncDef := line.Stmt.(*ast.FuncDefStmt); isFuncDef {
+		return result, trace
+	}
 
 	// Track result (same as EvalLine)
 	lr := LineResult{
@@ -177,6 +192,9 @@ func (e *Evaluator) evalStmt(stmt ast.Stmt) types.Value {
 	case *ast.AssignStmt:
 		return e.evalAssign(s)
 
+	case *ast.FuncDefStmt:
+		return e.evalFuncDef(s)
+
 	default:
 		return types.Error("unknown statement type")
 	}
@@ -190,6 +208,20 @@ func (e *Evaluator) evalAssign(stmt *ast.AssignStmt) types.Value {
 	}
 
 	return value
+}
+
+// evalFuncDef evaluates a function definition statement.
+func (e *Evaluator) evalFuncDef(stmt *ast.FuncDefStmt) types.Value {
+	// Create user function from AST
+	fn := NewUserFunction(stmt)
+
+	// Register in context
+	if err := e.ctx.DefineFunc(fn); err != "" {
+		return types.Error(err)
+	}
+
+	// Return a confirmation message as a string value
+	return types.StringValue("defined " + fn.Signature())
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -303,7 +335,24 @@ func (e *Evaluator) evalExpr(expr ast.Expr) types.Value {
 // ════════════════════════════════════════════════════════════════
 
 func (e *Evaluator) evalIdentifier(id *ast.Identifier) types.Value {
-	// Check for math constants first
+	// Check local bindings first (function parameters)
+	if e.localBindings != nil {
+		if val, ok := e.localBindings[id.Name]; ok {
+			if e.isTracing() {
+				e.trace.RecordVariable(id.Name, val)
+			}
+			return val
+		}
+		// Also check case-insensitive
+		if val, ok := e.localBindings[strings.ToLower(id.Name)]; ok {
+			if e.isTracing() {
+				e.trace.RecordVariable(id.Name, val)
+			}
+			return val
+		}
+	}
+
+	// Check for math constants
 	if val, ok := GetMathConstant(id.Name); ok {
 		result := types.Number(val)
 		if e.isTracing() {
@@ -479,8 +528,18 @@ func (e *Evaluator) evalCall(expr *ast.CallExpr) types.Value {
 		args[i] = val
 	}
 
-	// Look up and call function
 	name := strings.ToLower(expr.Name)
+
+	// Check for user-defined function first
+	if userFn, ok := e.ctx.GetFunc(name); ok {
+		result := e.callUserFunc(userFn, args)
+		if e.isTracing() {
+			e.trace.RecordFuncCall(expr.Name, args, result)
+		}
+		return result
+	}
+
+	// Fall back to built-in function
 	result := CallFunction(name, args)
 
 	if e.isTracing() {
@@ -488,4 +547,54 @@ func (e *Evaluator) evalCall(expr *ast.CallExpr) types.Value {
 	}
 
 	return result
+}
+
+// callUserFunc invokes a user-defined function with the given arguments.
+func (e *Evaluator) callUserFunc(fn *UserFunction, args []types.Value) types.Value {
+	// Validate argument count
+	if len(args) != fn.Arity() {
+		if fn.Arity() == 1 {
+			return types.Errorf("%s requires exactly 1 argument, got %d", fn.Name, len(args))
+		}
+		return types.Errorf("%s requires exactly %d arguments, got %d", fn.Name, fn.Arity(), len(args))
+	}
+
+	// Build parameter bindings
+	bindings := make(map[string]types.Value, len(fn.Params))
+	for i, param := range fn.Params {
+		bindings[param] = args[i]
+		// Also store lowercase for case-insensitive lookup
+		bindings[strings.ToLower(param)] = args[i]
+	}
+
+	// Evaluate body with bindings
+	return e.evalWithBindings(fn.Body, bindings)
+}
+
+// evalWithBindings evaluates an expression with local variable bindings.
+// Used for function parameter passing.
+func (e *Evaluator) evalWithBindings(expr ast.Expr, bindings map[string]types.Value) types.Value {
+	// Save current bindings
+	prevBindings := e.localBindings
+
+	// Set new bindings
+	e.localBindings = bindings
+
+	// Evaluate
+	result := e.evalExpr(expr)
+
+	// Restore previous bindings
+	e.localBindings = prevBindings
+
+	return result
+}
+
+// ════════════════════════════════════════════════════════════════
+// EXPRESSION EVALUATION WITH BINDINGS (for external use)
+// ════════════════════════════════════════════════════════════════
+
+// EvalExprWithBindings evaluates an expression with the given variable bindings.
+// This is useful for evaluating function bodies with parameter values.
+func (e *Evaluator) EvalExprWithBindings(expr ast.Expr, bindings map[string]types.Value) types.Value {
+	return e.evalWithBindings(expr, bindings)
 }
