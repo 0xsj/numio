@@ -209,6 +209,10 @@ func (l *Lexer) NextToken() token.Token {
 		l.readChar()
 		return token.New(token.COMMA, ",", startPos)
 
+	case ':':
+		l.readChar()
+		return token.New(token.COLON, ":", startPos)
+
 	case '%':
 		l.readChar()
 		return token.New(token.PERCENT, "%", startPos)
@@ -265,9 +269,9 @@ func (l *Lexer) isStartOfExpression() bool {
 		if ch == ' ' || ch == '\t' {
 			continue
 		}
-		// After operator or open paren, it's start of expression
+		// After operator, open paren, colon, or equals, it's start of expression
 		return ch == '+' || ch == '-' || ch == '*' || ch == '/' ||
-			ch == '^' || ch == '(' || ch == '=' || ch == ','
+			ch == '^' || ch == '(' || ch == '=' || ch == ',' || ch == ':'
 	}
 
 	return true
