@@ -72,6 +72,10 @@ type Value struct {
 	Crypto *Crypto    // For ValueCrypto
 	Time   *time.Time // For ValueDate
 
+	// Rate period (e.g., /month, /year)
+	// When set, this value represents a rate (e.g., 45000 TL/month)
+	Period Period
+
 	// Multiple values (for ValueMulti - comparison results)
 	Values []Value
 
@@ -93,6 +97,15 @@ func Number(n float64) Value {
 	return Value{
 		Kind: ValueNumber,
 		Num:  n,
+	}
+}
+
+// NumberRate creates a plain number rate value (e.g., 100/hour).
+func NumberRate(n float64, period Period) Value {
+	return Value{
+		Kind:   ValueNumber,
+		Num:    n,
+		Period: period,
 	}
 }
 
@@ -122,12 +135,32 @@ func CurrencyValue(amount float64, curr *Currency) Value {
 	}
 }
 
+// CurrencyRate creates a currency rate value (e.g., 45000 TL/month).
+func CurrencyRate(amount float64, curr *Currency, period Period) Value {
+	return Value{
+		Kind:   ValueCurrency,
+		Num:    amount,
+		Curr:   curr,
+		Period: period,
+	}
+}
+
 // UnitValue creates a value with a unit.
 func UnitValue(amount float64, unit *Unit) Value {
 	return Value{
 		Kind: ValueWithUnit,
 		Num:  amount,
 		Unit: unit,
+	}
+}
+
+// UnitRate creates a unit rate value (e.g., 60 km/hour).
+func UnitRate(amount float64, unit *Unit, period Period) Value {
+	return Value{
+		Kind:   ValueWithUnit,
+		Num:    amount,
+		Unit:   unit,
+		Period: period,
 	}
 }
 
@@ -140,12 +173,32 @@ func MetalValue(amount float64, metal *Metal) Value {
 	}
 }
 
+// MetalRate creates a precious metal rate value.
+func MetalRate(amount float64, metal *Metal, period Period) Value {
+	return Value{
+		Kind:   ValueMetal,
+		Num:    amount,
+		Metal:  metal,
+		Period: period,
+	}
+}
+
 // CryptoValue creates a cryptocurrency value.
 func CryptoValue(amount float64, crypto *Crypto) Value {
 	return Value{
 		Kind:   ValueCrypto,
 		Num:    amount,
 		Crypto: crypto,
+	}
+}
+
+// CryptoRate creates a cryptocurrency rate value.
+func CryptoRate(amount float64, crypto *Crypto, period Period) Value {
+	return Value{
+		Kind:   ValueCrypto,
+		Num:    amount,
+		Crypto: crypto,
+		Period: period,
 	}
 }
 
@@ -303,6 +356,11 @@ func (v Value) IsMulti() bool {
 	return v.Kind == ValueMulti
 }
 
+// IsRate returns true if this value has a period (is a rate).
+func (v Value) IsRate() bool {
+	return v.Period != PeriodNone
+}
+
 // ════════════════════════════════════════════════════════════════
 // ACCESSORS
 // ════════════════════════════════════════════════════════════════
@@ -373,6 +431,11 @@ func (v Value) UnitType() (UnitType, bool) {
 	return 0, false
 }
 
+// GetPeriod returns the rate period, or PeriodNone if not a rate.
+func (v Value) GetPeriod() Period {
+	return v.Period
+}
+
 // Len returns the number of values (1 for single values, n for multi).
 func (v Value) Len() int {
 	if v.Kind == ValueMulti {
@@ -389,10 +452,26 @@ func (v Value) Len() int {
 // ════════════════════════════════════════════════════════════════
 
 // WithAmount returns a new value with a different numeric amount.
-// Preserves the kind and type information.
+// Preserves the kind, type information, and period.
 func (v Value) WithAmount(amount float64) Value {
 	result := v
 	result.Num = amount
+	return result
+}
+
+// WithPeriod returns a new value with a rate period.
+// Converts a regular value into a rate.
+func (v Value) WithPeriod(period Period) Value {
+	result := v
+	result.Period = period
+	return result
+}
+
+// WithoutPeriod returns a new value without a rate period.
+// Converts a rate back to a regular value.
+func (v Value) WithoutPeriod() Value {
+	result := v
+	result.Period = PeriodNone
 	return result
 }
 
@@ -409,45 +488,93 @@ func (v Value) WithTime(t time.Time) Value {
 	return DateValue(t)
 }
 
+// MultiplyByPeriod multiplies a rate value by a period count.
+// For example: (45000 TL/month) * (12 months) = 540000 TL
+// If the value is not a rate, returns the value multiplied by the period's default multiplier.
+func (v Value) MultiplyByPeriod(targetPeriod Period, count float64) Value {
+	if v.IsError() || v.IsEmpty() {
+		return v
+	}
+
+	var multiplier float64
+
+	if v.IsRate() {
+		// Convert the target period to the value's period
+		// e.g., 1 year = 12 months
+		multiplier = targetPeriod.ConvertTo(count, v.Period)
+	} else {
+		// No rate info, use the period's default multiplier
+		// This assumes the base is "per month" for financial contexts
+		multiplier = count * targetPeriod.DefaultMultiplier()
+	}
+
+	result := v.WithAmount(v.Num * multiplier)
+	result.Period = PeriodNone // Result is no longer a rate
+	return result
+}
+
+// ConvertRateTo converts a rate to a different period.
+// For example: 45000 TL/month → 540000 TL/year
+func (v Value) ConvertRateTo(targetPeriod Period) Value {
+	if !v.IsRate() || v.IsError() || v.IsEmpty() {
+		return v
+	}
+
+	// Convert amount: multiply by conversion factor
+	// e.g., /month to /year: multiply by 12
+	factor := v.Period.ConvertTo(1, targetPeriod)
+	newAmount := v.Num / factor
+
+	result := v.WithAmount(newAmount)
+	result.Period = targetPeriod
+	return result
+}
+
 // ════════════════════════════════════════════════════════════════
 // FORMATTING
 // ════════════════════════════════════════════════════════════════
 
 // String returns a human-readable representation of the value.
 func (v Value) String() string {
+	var base string
+
 	switch v.Kind {
 	case ValueEmpty:
 		return ""
 
 	case ValueNumber:
-		return formatNumber(v.Num)
+		base = formatNumber(v.Num)
 
 	case ValuePercentage:
-		return formatNumber(v.Num*100) + "%"
+		base = formatNumber(v.Num*100) + "%"
 
 	case ValueCurrency:
 		if v.Curr != nil {
-			return formatCurrency(v.Num, v.Curr)
+			base = formatCurrency(v.Num, v.Curr)
+		} else {
+			base = formatNumber(v.Num)
 		}
-		return formatNumber(v.Num)
 
 	case ValueWithUnit:
 		if v.Unit != nil {
-			return formatNumber(v.Num) + " " + v.Unit.Code
+			base = formatNumber(v.Num) + " " + v.Unit.Code
+		} else {
+			base = formatNumber(v.Num)
 		}
-		return formatNumber(v.Num)
 
 	case ValueMetal:
 		if v.Metal != nil {
-			return formatNumber(v.Num) + " " + v.Metal.Code
+			base = formatNumber(v.Num) + " " + v.Metal.Code
+		} else {
+			base = formatNumber(v.Num)
 		}
-		return formatNumber(v.Num)
 
 	case ValueCrypto:
 		if v.Crypto != nil {
-			return formatCrypto(v.Num, v.Crypto)
+			base = formatCrypto(v.Num, v.Crypto)
+		} else {
+			base = formatNumber(v.Num)
 		}
-		return formatNumber(v.Num)
 
 	case ValueDate:
 		if v.Time != nil {
@@ -467,6 +594,13 @@ func (v Value) String() string {
 	default:
 		return "?"
 	}
+
+	// Append period for rate values
+	if v.Period != PeriodNone {
+		base += v.Period.Symbol()
+	}
+
+	return base
 }
 
 // formatMultiValue formats a slice of values for display.
@@ -773,6 +907,12 @@ func (v Value) ToMap() map[string]any {
 		}
 		m["values"] = vals
 		m["count"] = len(v.Values)
+	}
+
+	// Add period info for rate values
+	if v.Period != PeriodNone {
+		m["period"] = v.Period.String()
+		m["isRate"] = true
 	}
 
 	m["display"] = v.String()

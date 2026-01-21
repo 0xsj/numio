@@ -17,6 +17,7 @@ const (
 	NUMBER  // 42, 3.14, 1,234.56, 1.5e6
 	PERCENT // 20%
 	STRING
+
 	IDENTIFIER // variable names, unit names, currency codes
 
 	// Operators
@@ -36,6 +37,7 @@ const (
 	IN  // in, to (for conversions)
 	OF  // of (for "20% of 150")
 	DEF // def (for function definitions)
+	PER // per (for rates: "100 per hour", "45000/month")
 
 	// Currency symbols
 	DOLLAR   // $
@@ -74,6 +76,7 @@ var typeNames = map[Type]string{
 	IN:         "IN",
 	OF:         "OF",
 	DEF:        "DEF",
+	PER:        "PER",
 	DOLLAR:     "DOLLAR",
 	EURO:       "EURO",
 	POUND:      "POUND",
@@ -130,7 +133,13 @@ func (t Token) IsCurrencySymbol() bool {
 
 // IsKeyword checks if the token is a keyword.
 func (t Token) IsKeyword() bool {
-	return t.IsOneOf(IN, OF, DEF)
+	return t.IsOneOf(IN, OF, DEF, PER)
+}
+
+// IsPeriodKeyword checks if the token could introduce a rate period.
+// This includes both PER keyword and SLASH operator.
+func (t Token) IsPeriodKeyword() bool {
+	return t.IsOneOf(PER, SLASH)
 }
 
 // Keywords maps keyword strings to token types.
@@ -139,6 +148,7 @@ var Keywords = map[string]Type{
 	"to":  IN, // "to" is an alias for "in"
 	"of":  OF,
 	"def": DEF,
+	"per": PER,
 }
 
 // LookupIdentifier checks if an identifier is a keyword.

@@ -116,6 +116,7 @@ func NewApp() *App {
 	}
 }
 
+// NewAppWithTheme creates a new app with a specific theme
 func NewAppWithTheme(themeName string) *App {
 	km, _ := keymap.LoadOrCreate(keymap.DefaultConfigPath())
 
@@ -282,6 +283,9 @@ func (a *App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // triggerExplain shows explanation for the current or previous line.
 func (a *App) triggerExplain() {
+	// Ensure row exists
+	a.ensureRowExists()
+
 	// Get current line
 	line := strings.TrimSpace(a.lines[a.row])
 
@@ -317,6 +321,7 @@ func (a *App) handleInsertKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	// Handle Enter key - check for "explain" command
 	if key == "enter" {
+		a.ensureRowExists()
 		line := strings.TrimSpace(a.lines[a.row])
 		if strings.ToLower(line) == "explain" {
 			// Find the previous non-empty line to explain
@@ -362,6 +367,7 @@ func (a *App) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 
 	case keymap.ActionAppendMode:
 		a.keymap.SetMode(keymap.ModeInsert)
+		a.ensureRowExists()
 		if a.col < len(a.lines[a.row]) {
 			a.col++
 		}
@@ -404,6 +410,7 @@ func (a *App) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 		a.col = 0
 
 	case keymap.ActionGotoLineEnd:
+		a.ensureRowExists()
 		a.col = len(a.lines[a.row])
 
 	case keymap.ActionGotoTop:
@@ -411,7 +418,15 @@ func (a *App) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 		a.col = 0
 
 	case keymap.ActionGotoBottom:
-		a.row = len(a.lines) - 1
+		// Find last non-empty line
+		lastContent := 0
+		for i := len(a.lines) - 1; i >= 0; i-- {
+			if strings.TrimSpace(a.lines[i]) != "" {
+				lastContent = i
+				break
+			}
+		}
+		a.row = lastContent
 		a.clampCol()
 
 	case keymap.ActionPageUp:
@@ -554,6 +569,13 @@ func (a *App) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 // CURSOR MOVEMENT
 // ════════════════════════════════════════════════════════════════
 
+// ensureRowExists makes sure the current row exists in the lines slice.
+func (a *App) ensureRowExists() {
+	for a.row >= len(a.lines) {
+		a.lines = append(a.lines, "")
+	}
+}
+
 func (a *App) cursorUp() {
 	if a.row > 0 {
 		a.row--
@@ -562,10 +584,10 @@ func (a *App) cursorUp() {
 }
 
 func (a *App) cursorDown() {
-	if a.row < len(a.lines)-1 {
-		a.row++
-		a.clampCol()
-	}
+	a.row++
+	// Expand lines slice if needed
+	a.ensureRowExists()
+	a.clampCol()
 }
 
 func (a *App) cursorLeft() {
@@ -575,6 +597,8 @@ func (a *App) cursorLeft() {
 }
 
 func (a *App) cursorRight() {
+	a.ensureRowExists()
+
 	maxCol := len(a.lines[a.row])
 	if a.keymap.CurrentMode == keymap.ModeNormal && maxCol > 0 {
 		maxCol--
@@ -585,6 +609,8 @@ func (a *App) cursorRight() {
 }
 
 func (a *App) clampCol() {
+	a.ensureRowExists()
+
 	maxCol := len(a.lines[a.row])
 	if a.keymap.CurrentMode == keymap.ModeNormal && maxCol > 0 {
 		maxCol--
@@ -598,6 +624,8 @@ func (a *App) clampCol() {
 }
 
 func (a *App) wordNext() {
+	a.ensureRowExists()
+
 	line := a.lines[a.row]
 	col := a.col
 
@@ -610,8 +638,10 @@ func (a *App) wordNext() {
 		col++
 	}
 
-	if col >= len(line) && a.row < len(a.lines)-1 {
+	if col >= len(line) {
+		// Move to next line
 		a.row++
+		a.ensureRowExists()
 		a.col = 0
 	} else {
 		a.col = col
@@ -624,6 +654,8 @@ func (a *App) wordPrev() {
 		a.col = len(a.lines[a.row])
 		return
 	}
+
+	a.ensureRowExists()
 
 	line := a.lines[a.row]
 	col := a.col
@@ -657,6 +689,8 @@ func isWordChar(c byte) bool {
 // ════════════════════════════════════════════════════════════════
 
 func (a *App) insertChar(r rune) {
+	a.ensureRowExists()
+
 	line := a.lines[a.row]
 	if a.col > len(line) {
 		a.col = len(line)
@@ -666,6 +700,8 @@ func (a *App) insertChar(r rune) {
 }
 
 func (a *App) newLine() {
+	a.ensureRowExists()
+
 	line := a.lines[a.row]
 	if a.col > len(line) {
 		a.col = len(line)
@@ -687,6 +723,8 @@ func (a *App) newLine() {
 }
 
 func (a *App) newLineBelow() {
+	a.ensureRowExists()
+
 	newLines := make([]string, 0, len(a.lines)+1)
 	newLines = append(newLines, a.lines[:a.row+1]...)
 	newLines = append(newLines, "")
@@ -699,6 +737,8 @@ func (a *App) newLineBelow() {
 }
 
 func (a *App) newLineAbove() {
+	a.ensureRowExists()
+
 	newLines := make([]string, 0, len(a.lines)+1)
 	newLines = append(newLines, a.lines[:a.row]...)
 	newLines = append(newLines, "")
@@ -708,9 +748,13 @@ func (a *App) newLineAbove() {
 }
 
 func (a *App) backspace() {
+	a.ensureRowExists()
+
 	if a.col > 0 {
 		line := a.lines[a.row]
-		a.lines[a.row] = line[:a.col-1] + line[a.col:]
+		if a.col <= len(line) {
+			a.lines[a.row] = line[:a.col-1] + line[a.col:]
+		}
 		a.col--
 	} else if a.row > 0 {
 		prevLen := len(a.lines[a.row-1])
@@ -722,6 +766,8 @@ func (a *App) backspace() {
 }
 
 func (a *App) deleteChar() {
+	a.ensureRowExists()
+
 	line := a.lines[a.row]
 	if a.col < len(line) {
 		a.lines[a.row] = line[:a.col] + line[a.col+1:]
@@ -732,6 +778,8 @@ func (a *App) deleteChar() {
 }
 
 func (a *App) deleteLine() {
+	a.ensureRowExists()
+
 	a.yankBuffer = a.lines[a.row] + "\n"
 
 	if len(a.lines) == 1 {
@@ -747,13 +795,19 @@ func (a *App) deleteLine() {
 }
 
 func (a *App) deleteToEnd() {
+	a.ensureRowExists()
+
 	line := a.lines[a.row]
-	a.yankBuffer = line[a.col:]
-	a.lines[a.row] = line[:a.col]
+	if a.col < len(line) {
+		a.yankBuffer = line[a.col:]
+		a.lines[a.row] = line[:a.col]
+	}
 	a.clampCol()
 }
 
 func (a *App) joinLines() {
+	a.ensureRowExists()
+
 	if a.row < len(a.lines)-1 {
 		a.lines[a.row] = a.lines[a.row] + " " + strings.TrimLeft(a.lines[a.row+1], " \t")
 		a.lines = append(a.lines[:a.row+1], a.lines[a.row+2:]...)
@@ -761,6 +815,7 @@ func (a *App) joinLines() {
 }
 
 func (a *App) yankLine() {
+	a.ensureRowExists()
 	a.yankBuffer = a.lines[a.row] + "\n"
 }
 
@@ -768,6 +823,8 @@ func (a *App) paste() {
 	if a.yankBuffer == "" {
 		return
 	}
+
+	a.ensureRowExists()
 
 	if strings.HasSuffix(a.yankBuffer, "\n") {
 		// Paste line below
@@ -784,8 +841,12 @@ func (a *App) paste() {
 	} else {
 		// Paste inline
 		line := a.lines[a.row]
-		a.lines[a.row] = line[:a.col+1] + a.yankBuffer + line[a.col+1:]
-		a.col += len(a.yankBuffer)
+		insertPos := a.col + 1
+		if insertPos > len(line) {
+			insertPos = len(line)
+		}
+		a.lines[a.row] = line[:insertPos] + a.yankBuffer + line[insertPos:]
+		a.col = insertPos + len(a.yankBuffer) - 1
 	}
 }
 
@@ -793,6 +854,8 @@ func (a *App) pasteAbove() {
 	if a.yankBuffer == "" {
 		return
 	}
+
+	a.ensureRowExists()
 
 	if strings.HasSuffix(a.yankBuffer, "\n") {
 		// Paste line above
@@ -815,6 +878,8 @@ func (a *App) pasteAbove() {
 // ════════════════════════════════════════════════════════════════
 
 func (a *App) deleteWithMotion(motion keymap.Action, count int) {
+	a.ensureRowExists()
+
 	startRow, startCol := a.row, a.col
 
 	// Execute motion to find end position
@@ -858,12 +923,19 @@ func (a *App) deleteWithMotion(motion keymap.Action, count int) {
 		// Join lines
 		newLine := a.lines[startRow][:startCol]
 		if endRow < len(a.lines) {
-			newLine += a.lines[endRow][endCol:]
+			yanked := a.lines[endRow]
+			if endCol < len(yanked) {
+				newLine += yanked[endCol:]
+			}
 		}
 		a.lines[startRow] = newLine
 
 		// Remove middle lines
-		a.lines = append(a.lines[:startRow+1], a.lines[endRow+1:]...)
+		if endRow < len(a.lines) {
+			a.lines = append(a.lines[:startRow+1], a.lines[endRow+1:]...)
+		} else {
+			a.lines = a.lines[:startRow+1]
+		}
 
 		a.row = startRow
 		a.col = startCol
@@ -873,6 +945,8 @@ func (a *App) deleteWithMotion(motion keymap.Action, count int) {
 }
 
 func (a *App) yankWithMotion(motion keymap.Action, count int) {
+	a.ensureRowExists()
+
 	startRow, startCol := a.row, a.col
 
 	// Execute motion to find end position
@@ -907,7 +981,12 @@ func (a *App) yankWithMotion(motion keymap.Action, count int) {
 			yanked.WriteString("\n")
 		}
 		if endRow < len(a.lines) {
-			yanked.WriteString(a.lines[endRow][:endCol])
+			line := a.lines[endRow]
+			if endCol <= len(line) {
+				yanked.WriteString(line[:endCol])
+			} else {
+				yanked.WriteString(line)
+			}
 		}
 		a.yankBuffer = yanked.String()
 	}
@@ -930,12 +1009,20 @@ func (a *App) executeMotion(motion keymap.Action) {
 	case keymap.ActionGotoLineStart:
 		a.col = 0
 	case keymap.ActionGotoLineEnd:
+		a.ensureRowExists()
 		a.col = len(a.lines[a.row])
 	case keymap.ActionGotoTop:
 		a.row = 0
 		a.col = 0
 	case keymap.ActionGotoBottom:
-		a.row = len(a.lines) - 1
+		lastContent := 0
+		for i := len(a.lines) - 1; i >= 0; i-- {
+			if strings.TrimSpace(a.lines[i]) != "" {
+				lastContent = i
+				break
+			}
+		}
+		a.row = lastContent
 		a.clampCol()
 	}
 }
@@ -1042,9 +1129,17 @@ func (a *App) View() string {
 
 	a.engine.Clear()
 
+	// Calculate scroll offset to keep cursor visible
+	scrollOffset := 0
+	if a.row >= contentHeight {
+		scrollOffset = a.row - contentHeight + 1
+	}
+
 	for i := 0; i < contentHeight; i++ {
-		if i < len(a.lines) {
-			b.WriteString(lineNumStyle.Render(fmt.Sprintf("%3d ", i+1)))
+		lineIdx := i + scrollOffset
+
+		if lineIdx < len(a.lines) {
+			b.WriteString(lineNumStyle.Render(fmt.Sprintf("%3d ", lineIdx+1)))
 		} else {
 			b.WriteString(lineNumStyle.Render("    "))
 		}
@@ -1054,10 +1149,10 @@ func (a *App) View() string {
 		var editorContent string
 		var resultContent string
 
-		if i < len(a.lines) {
-			line := a.lines[i]
+		if lineIdx < len(a.lines) {
+			line := a.lines[lineIdx]
 
-			if i == a.row {
+			if lineIdx == a.row {
 				editorContent = a.renderLineWithCursor(line)
 			} else {
 				editorContent = a.highlighter.Highlight(line)
@@ -1163,6 +1258,11 @@ func (a *App) renderHelp() string {
 	content.WriteString(helpKeyStyle.Render("yy / y{motion}") + helpDescStyle.Render("Yank line/motion") + "\n")
 	content.WriteString(helpKeyStyle.Render("p / P") + helpDescStyle.Render("Paste after/before") + "\n")
 	content.WriteString(helpKeyStyle.Render("u / Ctrl+r") + helpDescStyle.Render("Undo / Redo") + "\n")
+
+	content.WriteString(helpSectionStyle.Render("Functions"))
+	content.WriteString("\n")
+	content.WriteString(helpKeyStyle.Render("def f(x):") + helpDescStyle.Render("Define function") + "\n")
+	content.WriteString(helpDescStyle.Render("  Example: def double(x): x * 2") + "\n")
 
 	content.WriteString(helpSectionStyle.Render("General"))
 	content.WriteString("\n")
