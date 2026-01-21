@@ -39,13 +39,16 @@ func DefaultTheme() *Theme {
 		Colors: map[TokenClass]Color{
 			ClassNone:       Palette.White,
 			ClassNumber:     Palette.Purple,
-			ClassString:     Palette.Green, // ADD THIS
+			ClassString:     Palette.Green,
 			ClassPercent:    Palette.Magenta,
 			ClassOperator:   Palette.Cyan,
 			ClassParen:      Palette.Gray400,
 			ClassIdentifier: Palette.White,
 			ClassKeyword:    Palette.Orange,
 			ClassFunction:   Palette.Blue,
+			ClassUserFunc:   Palette.Cyan, // User-defined functions - distinct from built-in
+			ClassFuncName:   Palette.Blue, // Function name in definition
+			ClassParam:      Palette.Pink, // Parameters in definition
 			ClassCurrency:   Palette.Green,
 			ClassUnit:       Palette.Yellow,
 			ClassCrypto:     Palette.Orange,
@@ -64,13 +67,16 @@ func DraculaTheme() *Theme {
 		Colors: map[TokenClass]Color{
 			ClassNone:       NewColor("#f8f8f2"),
 			ClassNumber:     NewColor("#bd93f9"),
-			ClassString:     NewColor("#f1fa8c"), // ADD THIS - Yellow
+			ClassString:     NewColor("#f1fa8c"),
 			ClassPercent:    NewColor("#ff79c6"),
 			ClassOperator:   NewColor("#ff79c6"),
 			ClassParen:      NewColor("#f8f8f2"),
 			ClassIdentifier: NewColor("#f8f8f2"),
 			ClassKeyword:    NewColor("#ff79c6"),
 			ClassFunction:   NewColor("#50fa7b"),
+			ClassUserFunc:   NewColor("#8be9fd"), // Cyan for user functions
+			ClassFuncName:   NewColor("#50fa7b"), // Green for function name
+			ClassParam:      NewColor("#ffb86c"), // Orange for parameters
 			ClassCurrency:   NewColor("#50fa7b"),
 			ClassUnit:       NewColor("#f1fa8c"),
 			ClassCrypto:     NewColor("#ffb86c"),
@@ -89,13 +95,16 @@ func MonokaiTheme() *Theme {
 		Colors: map[TokenClass]Color{
 			ClassNone:       NewColor("#f8f8f2"),
 			ClassNumber:     NewColor("#ae81ff"),
-			ClassString:     NewColor("#e6db74"), // ADD THIS - Yellow
+			ClassString:     NewColor("#e6db74"),
 			ClassPercent:    NewColor("#ae81ff"),
 			ClassOperator:   NewColor("#f92672"),
 			ClassParen:      NewColor("#f8f8f2"),
 			ClassIdentifier: NewColor("#f8f8f2"),
 			ClassKeyword:    NewColor("#f92672"),
 			ClassFunction:   NewColor("#66d9ef"),
+			ClassUserFunc:   NewColor("#a6e22e"), // Green for user functions
+			ClassFuncName:   NewColor("#66d9ef"), // Blue for function name
+			ClassParam:      NewColor("#fd971f"), // Orange for parameters
 			ClassCurrency:   NewColor("#a6e22e"),
 			ClassUnit:       NewColor("#e6db74"),
 			ClassCrypto:     NewColor("#fd971f"),
@@ -114,13 +123,16 @@ func GruvboxTheme() *Theme {
 		Colors: map[TokenClass]Color{
 			ClassNone:       NewColor("#ebdbb2"),
 			ClassNumber:     NewColor("#d3869b"),
-			ClassString:     NewColor("#b8bb26"), // ADD THIS - Green
+			ClassString:     NewColor("#b8bb26"),
 			ClassPercent:    NewColor("#d3869b"),
 			ClassOperator:   NewColor("#8ec07c"),
 			ClassParen:      NewColor("#a89984"),
 			ClassIdentifier: NewColor("#ebdbb2"),
 			ClassKeyword:    NewColor("#fb4934"),
 			ClassFunction:   NewColor("#83a598"),
+			ClassUserFunc:   NewColor("#8ec07c"), // Aqua for user functions
+			ClassFuncName:   NewColor("#83a598"), // Blue for function name
+			ClassParam:      NewColor("#fabd2f"), // Yellow for parameters
 			ClassCurrency:   NewColor("#b8bb26"),
 			ClassUnit:       NewColor("#fabd2f"),
 			ClassCrypto:     NewColor("#fe8019"),
@@ -139,13 +151,16 @@ func LightTheme() *Theme {
 		Colors: map[TokenClass]Color{
 			ClassNone:       NewColor("#24292e"),
 			ClassNumber:     NewColor("#6f42c1"),
-			ClassString:     NewColor("#032f62"), // ADD THIS - Dark blue
+			ClassString:     NewColor("#032f62"),
 			ClassPercent:    NewColor("#6f42c1"),
 			ClassOperator:   NewColor("#d73a49"),
 			ClassParen:      NewColor("#24292e"),
 			ClassIdentifier: NewColor("#24292e"),
 			ClassKeyword:    NewColor("#d73a49"),
 			ClassFunction:   NewColor("#005cc5"),
+			ClassUserFunc:   NewColor("#22863a"), // Green for user functions
+			ClassFuncName:   NewColor("#005cc5"), // Blue for function name
+			ClassParam:      NewColor("#e36209"), // Orange for parameters
 			ClassCurrency:   NewColor("#22863a"),
 			ClassUnit:       NewColor("#b08800"),
 			ClassCrypto:     NewColor("#e36209"),
@@ -245,9 +260,24 @@ func (b *ThemeBuilder) Keyword(hex string) *ThemeBuilder {
 	return b.SetHex(ClassKeyword, hex)
 }
 
-// Function sets the function color.
+// Function sets the built-in function color.
 func (b *ThemeBuilder) Function(hex string) *ThemeBuilder {
 	return b.SetHex(ClassFunction, hex)
+}
+
+// UserFunc sets the user-defined function color.
+func (b *ThemeBuilder) UserFunc(hex string) *ThemeBuilder {
+	return b.SetHex(ClassUserFunc, hex)
+}
+
+// FuncName sets the function name (in definition) color.
+func (b *ThemeBuilder) FuncName(hex string) *ThemeBuilder {
+	return b.SetHex(ClassFuncName, hex)
+}
+
+// Param sets the parameter color.
+func (b *ThemeBuilder) Param(hex string) *ThemeBuilder {
+	return b.SetHex(ClassParam, hex)
 }
 
 // Currency sets the currency color.

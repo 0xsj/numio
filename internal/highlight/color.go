@@ -46,8 +46,11 @@ const (
 	ClassOperator   // Operators: +, -, *, /, ^
 	ClassParen      // Parentheses: (, )
 	ClassIdentifier // Variable names
-	ClassKeyword    // Keywords: in, to, of
-	ClassFunction   // Function names: sum, avg
+	ClassKeyword    // Keywords: in, to, of, def
+	ClassFunction   // Built-in function names: sum, avg
+	ClassUserFunc   // User-defined function names
+	ClassFuncName   // Function name in definition: def [name](...)
+	ClassParam      // Parameter names in function definition
 	ClassCurrency   // Currency symbols and codes: $, €, USD
 	ClassUnit       // Unit codes: km, lb, hours
 	ClassCrypto     // Crypto codes: BTC, ETH
@@ -78,6 +81,12 @@ func (c TokenClass) String() string {
 		return "keyword"
 	case ClassFunction:
 		return "function"
+	case ClassUserFunc:
+		return "userfunc"
+	case ClassFuncName:
+		return "funcname"
+	case ClassParam:
+		return "param"
 	case ClassCurrency:
 		return "currency"
 	case ClassUnit:

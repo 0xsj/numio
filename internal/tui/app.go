@@ -90,14 +90,20 @@ func NewApp() *App {
 	// Load keymap (with user config if exists)
 	km, _ := keymap.LoadOrCreate(keymap.DefaultConfigPath())
 
+	eng := engine.New()
+	hl := highlight.Default()
+
+	// Wire up user function registry for syntax highlighting
+	hl.SetUserFuncRegistry(eng.UserFunctionRegistry())
+
 	return &App{
 		lines:        []string{""},
 		row:          0,
 		col:          0,
 		width:        80,
 		height:       24,
-		engine:       engine.New(),
-		highlighter:  highlight.Default(),
+		engine:       eng,
+		highlighter:  hl,
 		keymap:       km,
 		showHelp:     false,
 		showExplain:  false,
@@ -110,11 +116,33 @@ func NewApp() *App {
 	}
 }
 
-// NewAppWithTheme creates a new app with a specific theme
 func NewAppWithTheme(themeName string) *App {
-	app := NewApp()
-	app.highlighter = highlight.NewWithThemeName(themeName)
-	return app
+	km, _ := keymap.LoadOrCreate(keymap.DefaultConfigPath())
+
+	eng := engine.New()
+	hl := highlight.NewWithThemeName(themeName)
+
+	// Wire up user function registry for syntax highlighting
+	hl.SetUserFuncRegistry(eng.UserFunctionRegistry())
+
+	return &App{
+		lines:        []string{""},
+		row:          0,
+		col:          0,
+		width:        80,
+		height:       24,
+		engine:       eng,
+		highlighter:  hl,
+		keymap:       km,
+		showHelp:     false,
+		showExplain:  false,
+		lastExplain:  nil,
+		yankBuffer:   "",
+		undoStack:    nil,
+		redoStack:    nil,
+		rateStatus:   RateStatusInfo{Status: RateStatusIdle},
+		spinnerFrame: 0,
+	}
 }
 
 // SetTheme changes the syntax highlighting theme

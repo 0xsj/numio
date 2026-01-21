@@ -5,6 +5,7 @@ package highlight
 import (
 	"strings"
 
+	"github.com/0xsj/numio/internal/eval"
 	"github.com/0xsj/numio/internal/lexer"
 	"github.com/0xsj/numio/internal/token"
 	"github.com/0xsj/numio/pkg/types"
@@ -13,6 +14,9 @@ import (
 // Highlighter applies syntax highlighting to numio expressions.
 type Highlighter struct {
 	theme *Theme
+
+	// Optional: user function registry for highlighting user-defined functions
+	userFuncs *eval.UserFuncRegistry
 }
 
 // New creates a new Highlighter with the given theme.
@@ -45,6 +49,11 @@ func (h *Highlighter) SetTheme(theme *Theme) {
 	}
 }
 
+// SetUserFuncRegistry sets the user function registry for highlighting user-defined functions.
+func (h *Highlighter) SetUserFuncRegistry(registry *eval.UserFuncRegistry) {
+	h.userFuncs = registry
+}
+
 // ════════════════════════════════════════════════════════════════
 // HIGHLIGHTING
 // ════════════════════════════════════════════════════════════════
@@ -69,7 +78,13 @@ func (h *Highlighter) Highlight(input string) string {
 	var result strings.Builder
 	lastEnd := 0
 
-	for _, tok := range tokens {
+	// Track context for function definition highlighting
+	inFuncDef := false
+	expectFuncName := false
+	expectParams := false
+	parenDepth := 0
+
+	for i, tok := range tokens {
 		if tok.Type == token.EOF {
 			break
 		}
@@ -79,9 +94,33 @@ func (h *Highlighter) Highlight(input string) string {
 			result.WriteString(input[lastEnd:tok.Pos])
 		}
 
+		// Update context tracking
+		if tok.Type == token.DEF {
+			inFuncDef = true
+			expectFuncName = true
+		}
+
 		// Get token class and apply highlighting
-		class := h.classifyToken(tok)
+		class := h.classifyTokenWithContext(tok, tokens, i, inFuncDef, expectFuncName, expectParams, parenDepth)
 		result.WriteString(h.theme.Render(class, tok.Literal))
+
+		// Update context after processing
+		if expectFuncName && tok.Type == token.IDENTIFIER {
+			expectFuncName = false
+			expectParams = true
+		}
+		if tok.Type == token.LPAREN && expectParams {
+			parenDepth++
+		}
+		if tok.Type == token.RPAREN && expectParams {
+			parenDepth--
+			if parenDepth == 0 {
+				expectParams = false
+			}
+		}
+		if tok.Type == token.COLON && inFuncDef {
+			inFuncDef = false
+		}
 
 		lastEnd = tok.Pos + len(tok.Literal)
 	}
@@ -131,6 +170,11 @@ func (h *Highlighter) HighlightLine(input string, cursorPos int) (before, cursor
 
 // classifyToken determines the TokenClass for a given token.
 func (h *Highlighter) classifyToken(tok token.Token) TokenClass {
+	return h.classifyTokenWithContext(tok, nil, 0, false, false, false, 0)
+}
+
+// classifyTokenWithContext classifies a token with function definition context.
+func (h *Highlighter) classifyTokenWithContext(tok token.Token, tokens []token.Token, idx int, inFuncDef, expectFuncName, expectParams bool, parenDepth int) TokenClass {
 	switch tok.Type {
 	// Numbers and percentages
 	case token.NUMBER:
@@ -157,6 +201,14 @@ func (h *Highlighter) classifyToken(tok token.Token) TokenClass {
 	case token.IN, token.OF:
 		return ClassKeyword
 
+	// Function definition keyword
+	case token.DEF:
+		return ClassKeyword
+
+	// Colon (used in function definitions)
+	case token.COLON:
+		return ClassOperator
+
 	// Currency symbols
 	case token.DOLLAR, token.EURO, token.POUND, token.YEN, token.BITCOIN, token.CURRENCY:
 		return ClassCurrency
@@ -167,6 +219,13 @@ func (h *Highlighter) classifyToken(tok token.Token) TokenClass {
 
 	// Identifiers - need further classification
 	case token.IDENTIFIER:
+		// In function definition context
+		if expectFuncName {
+			return ClassFuncName
+		}
+		if expectParams && parenDepth > 0 {
+			return ClassParam
+		}
 		return h.classifyIdentifier(tok.Literal)
 
 	// Comma
@@ -182,9 +241,14 @@ func (h *Highlighter) classifyToken(tok token.Token) TokenClass {
 func (h *Highlighter) classifyIdentifier(name string) TokenClass {
 	lower := strings.ToLower(name)
 
-	// Check if it's a known function
-	if isFunction(lower) {
+	// Check if it's a known built-in function
+	if isBuiltinFunction(lower) {
 		return ClassFunction
+	}
+
+	// Check if it's a user-defined function
+	if h.userFuncs != nil && h.userFuncs.Has(name) {
+		return ClassUserFunc
 	}
 
 	// Check if it's a currency code or name
@@ -211,40 +275,10 @@ func (h *Highlighter) classifyIdentifier(name string) TokenClass {
 	return ClassIdentifier
 }
 
-// isFunction checks if a name is a known built-in function.
-func isFunction(name string) bool {
-	functions := map[string]bool{
-		// Aggregation
-		"sum":     true,
-		"avg":     true,
-		"average": true,
-		"mean":    true,
-		"min":     true,
-		"max":     true,
-		"count":   true,
-
-		// Math
-		"abs":   true,
-		"sqrt":  true,
-		"round": true,
-		"floor": true,
-		"ceil":  true,
-		"log":   true,
-		"log10": true,
-		"ln":    true,
-		"exp":   true,
-		"pow":   true,
-
-		// Trigonometry
-		"sin":  true,
-		"cos":  true,
-		"tan":  true,
-		"asin": true,
-		"acos": true,
-		"atan": true,
-	}
-
-	return functions[name]
+// isBuiltinFunction checks if a name is a known built-in function.
+func isBuiltinFunction(name string) bool {
+	// Use the eval package's HasFunction for accuracy
+	return eval.HasFunction(name)
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -281,7 +315,13 @@ func (h *Highlighter) HighlightSpans(input string) []Span {
 	spans := make([]Span, 0, len(tokens))
 	lastEnd := 0
 
-	for _, tok := range tokens {
+	// Track context for function definition highlighting
+	inFuncDef := false
+	expectFuncName := false
+	expectParams := false
+	parenDepth := 0
+
+	for i, tok := range tokens {
 		if tok.Type == token.EOF {
 			break
 		}
@@ -296,8 +336,14 @@ func (h *Highlighter) HighlightSpans(input string) []Span {
 			})
 		}
 
+		// Update context tracking
+		if tok.Type == token.DEF {
+			inFuncDef = true
+			expectFuncName = true
+		}
+
 		// Add span for this token
-		class := h.classifyToken(tok)
+		class := h.classifyTokenWithContext(tok, tokens, i, inFuncDef, expectFuncName, expectParams, parenDepth)
 		end := tok.Pos + len(tok.Literal)
 		spans = append(spans, Span{
 			Start: tok.Pos,
@@ -305,6 +351,24 @@ func (h *Highlighter) HighlightSpans(input string) []Span {
 			Text:  tok.Literal,
 			Class: class,
 		})
+
+		// Update context after processing
+		if expectFuncName && tok.Type == token.IDENTIFIER {
+			expectFuncName = false
+			expectParams = true
+		}
+		if tok.Type == token.LPAREN && expectParams {
+			parenDepth++
+		}
+		if tok.Type == token.RPAREN && expectParams {
+			parenDepth--
+			if parenDepth == 0 {
+				expectParams = false
+			}
+		}
+		if tok.Type == token.COLON && inFuncDef {
+			inFuncDef = false
+		}
 
 		lastEnd = end
 	}
