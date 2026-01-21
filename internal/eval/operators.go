@@ -74,7 +74,7 @@ func applyPercentageOp(op ast.BinaryOp, left, right types.Value) types.Value {
 		result = baseValue * (1 - percentage)
 	}
 
-	// Preserve the left operand's type
+	// Preserve the left operand's type (including period if it's a rate)
 	return left.WithAmount(result)
 }
 
@@ -82,61 +82,123 @@ func applyPercentageOp(op ast.BinaryOp, left, right types.Value) types.Value {
 func coerceResult(result float64, left, right types.Value, op ast.BinaryOp, ctx *Context) types.Value {
 	// For multiplication/division, special handling
 	if op == ast.OpMul || op == ast.OpDiv {
-		// If one is a plain number, inherit the other's type
-		if left.IsNumber() && !right.IsNumber() {
-			return right.WithAmount(result)
-		}
-		if right.IsNumber() && !left.IsNumber() {
-			return left.WithAmount(result)
-		}
-		// Both typed - return plain number (or could be unit algebra in future)
-		if !left.IsNumber() && !right.IsNumber() {
-			return types.Number(result)
-		}
+		return coerceMultiplyDivide(result, left, right, op)
 	}
 
 	// For addition/subtraction, types must be compatible
 	if op == ast.OpAdd || op == ast.OpSub {
-		// Same type - preserve it
-		if left.Kind == right.Kind {
-			return left.WithAmount(result)
-		}
+		return coerceAddSubtract(result, left, right, op, ctx)
+	}
 
-		// One is a plain number - inherit the typed one
-		if left.IsNumber() {
+	// For power/mod, return plain number
+	return types.Number(result)
+}
+
+// coerceMultiplyDivide handles type coercion for multiplication and division.
+func coerceMultiplyDivide(result float64, left, right types.Value, op ast.BinaryOp) types.Value {
+	// If one is a plain number (not a rate), inherit the other's type
+	if left.IsNumber() && !left.IsRate() && !right.IsNumber() {
+		return right.WithAmount(result)
+	}
+	if right.IsNumber() && !right.IsRate() && !left.IsNumber() {
+		return left.WithAmount(result)
+	}
+
+	// If one is a plain number with no period, inherit the rate type
+	if left.Kind == types.ValueNumber && !left.IsRate() {
+		if right.IsRate() {
+			// number * rate = rate (scaled)
 			return right.WithAmount(result)
 		}
-		if right.IsNumber() {
+		return right.WithAmount(result)
+	}
+	if right.Kind == types.ValueNumber && !right.IsRate() {
+		if left.IsRate() {
+			// rate * number = rate (scaled)
 			return left.WithAmount(result)
 		}
+		return left.WithAmount(result)
+	}
 
-		// Different typed values - need conversion
-		// For currencies, convert right to left's currency
-		if left.IsCurrency() && right.IsCurrency() {
-			if left.Curr != nil && right.Curr != nil && ctx != nil {
-				converted, ok := ctx.Convert(right.Num, right.Curr.Code, left.Curr.Code)
-				if ok {
-					if op == ast.OpAdd {
-						return left.WithAmount(left.Num + converted)
-					}
-					return left.WithAmount(left.Num - converted)
+	// Both typed - return plain number (or could be unit algebra in future)
+	// But if one has a period and is the dominant type, preserve it
+	if left.IsRate() && (right.Kind == types.ValueNumber && !right.IsRate()) {
+		return left.WithAmount(result)
+	}
+	if right.IsRate() && (left.Kind == types.ValueNumber && !left.IsRate()) {
+		return right.WithAmount(result)
+	}
+
+	// Division of rate by number preserves the rate
+	if op == ast.OpDiv && left.IsRate() && right.Kind == types.ValueNumber {
+		return left.WithAmount(result)
+	}
+
+	return types.Number(result)
+}
+
+// coerceAddSubtract handles type coercion for addition and subtraction.
+func coerceAddSubtract(result float64, left, right types.Value, op ast.BinaryOp, ctx *Context) types.Value {
+	// Same type - preserve it (including period)
+	if left.Kind == right.Kind {
+		// If both are rates with same period, preserve it
+		if left.IsRate() && right.IsRate() && left.Period == right.Period {
+			return left.WithAmount(result)
+		}
+		// If both are rates with different periods, this is an error or needs conversion
+		if left.IsRate() && right.IsRate() && left.Period != right.Period {
+			// Convert right to left's period and recalculate
+			rightConverted := right.ConvertRateTo(left.Period)
+			if op == ast.OpAdd {
+				return left.WithAmount(left.Num + rightConverted.Num)
+			}
+			return left.WithAmount(left.Num - rightConverted.Num)
+		}
+		return left.WithAmount(result)
+	}
+
+	// One is a plain number - inherit the typed one
+	if left.IsNumber() && !left.IsRate() {
+		return right.WithAmount(result)
+	}
+	if right.IsNumber() && !right.IsRate() {
+		return left.WithAmount(result)
+	}
+
+	// Different typed values - need conversion
+	// For currencies, convert right to left's currency
+	if left.IsCurrency() && right.IsCurrency() {
+		if left.Curr != nil && right.Curr != nil && ctx != nil {
+			converted, ok := ctx.Convert(right.Num, right.Curr.Code, left.Curr.Code)
+			if ok {
+				var newResult float64
+				if op == ast.OpAdd {
+					newResult = left.Num + converted
+				} else {
+					newResult = left.Num - converted
 				}
+				// Preserve period if left is a rate
+				res := left.WithAmount(newResult)
+				return res
 			}
 		}
+	}
 
-		// For units, convert right to left's unit
-		if left.IsUnit() && right.IsUnit() {
-			if left.Unit != nil && right.Unit != nil {
-				converted, ok := right.Unit.ConvertTo(right.Num, left.Unit)
-				if ok {
-					if op == ast.OpAdd {
-						return left.WithAmount(left.Num + converted)
-					}
-					return left.WithAmount(left.Num - converted)
+	// For units, convert right to left's unit
+	if left.IsUnit() && right.IsUnit() {
+		if left.Unit != nil && right.Unit != nil {
+			converted, ok := right.Unit.ConvertTo(right.Num, left.Unit)
+			if ok {
+				var newResult float64
+				if op == ast.OpAdd {
+					newResult = left.Num + converted
+				} else {
+					newResult = left.Num - converted
 				}
+				return left.WithAmount(newResult)
 			}
-			return types.Error("incompatible units")
 		}
+		return types.Error("incompatible units")
 	}
 
 	return types.Number(result)

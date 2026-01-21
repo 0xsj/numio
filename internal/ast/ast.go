@@ -240,6 +240,50 @@ func (s *StringLit) String() string {
 }
 
 // ════════════════════════════════════════════════════════════════
+// EXPRESSIONS - RATE LITERALS
+// ════════════════════════════════════════════════════════════════
+
+// RateExpr represents a value with a rate period (e.g., 45000 TL/month, 100 per hour).
+// This wraps another expression and adds a period to it.
+type RateExpr struct {
+	Value  Expr         // The base value expression
+	Period types.Period // The rate period
+	Raw    string       // Original text
+}
+
+func (r *RateExpr) node() {}
+func (r *RateExpr) expr() {}
+
+func (r *RateExpr) String() string {
+	if r.Raw != "" {
+		return r.Raw
+	}
+	return r.Value.String() + r.Period.Symbol()
+}
+
+// PeriodExpr represents a standalone period used as a multiplier (e.g., "year", "month").
+// When multiplied with a rate, it converts the rate to a total.
+// When used alone, it represents a count of that period (default 1).
+type PeriodExpr struct {
+	Period types.Period // The period type
+	Count  float64      // Number of periods (default 1)
+	Raw    string       // Original text
+}
+
+func (p *PeriodExpr) node() {}
+func (p *PeriodExpr) expr() {}
+
+func (p *PeriodExpr) String() string {
+	if p.Raw != "" {
+		return p.Raw
+	}
+	if p.Count == 1 {
+		return p.Period.String()
+	}
+	return formatFloat(p.Count) + " " + p.Period.Plural()
+}
+
+// ════════════════════════════════════════════════════════════════
 // EXPRESSIONS - REFERENCES
 // ════════════════════════════════════════════════════════════════
 
@@ -641,6 +685,9 @@ func Walk(v Visitor, node Node) {
 	case *ContinuationExpr:
 		Walk(v, n.Expr)
 
+	case *RateExpr:
+		Walk(v, n.Value)
+
 	case *CondExpr:
 		Walk(v, n.Cond)
 		Walk(v, n.Then)
@@ -679,6 +726,18 @@ func IsContinuation(e Expr) bool {
 	}
 }
 
+// IsRateExpr returns true if the expression is a rate expression.
+func IsRateExpr(e Expr) bool {
+	_, ok := e.(*RateExpr)
+	return ok
+}
+
+// IsPeriodExpr returns true if the expression is a period expression.
+func IsPeriodExpr(e Expr) bool {
+	_, ok := e.(*PeriodExpr)
+	return ok
+}
+
 // GetIdentifiers returns all identifiers referenced in an expression.
 func GetIdentifiers(e Expr) []string {
 	var ids []string
@@ -708,6 +767,8 @@ func GetIdentifiers(e Expr) []string {
 			collect(n.Expr)
 		case *ContinuationExpr:
 			collect(n.Expr)
+		case *RateExpr:
+			collect(n.Value)
 		case *CondExpr:
 			collect(n.Cond)
 			collect(n.Then)

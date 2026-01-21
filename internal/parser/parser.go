@@ -493,12 +493,15 @@ func (p *Parser) parseUnaryExpr() ast.Expr {
 	return p.parsePostfixExpr()
 }
 
-// parsePostfixExpr parses postfix expressions (function calls, etc).
+// parsePostfixExpr parses postfix expressions (function calls, rate suffixes, etc).
 func (p *Parser) parsePostfixExpr() ast.Expr {
 	expr := p.parsePrimaryExpr()
 	if expr == nil {
 		return nil
 	}
+
+	// Check for rate suffix: /month, /year, per month, per year
+	expr = p.tryParseRateSuffix(expr)
 
 	// Check for "of" (percent of): 20% of 150
 	if p.check(token.OF) {
@@ -511,6 +514,46 @@ func (p *Parser) parsePostfixExpr() ast.Expr {
 				return expr
 			}
 			return &ast.PercentOfExpr{Percent: expr, Value: value}
+		}
+	}
+
+	return expr
+}
+
+// tryParseRateSuffix attempts to parse a rate suffix (/month, per year, etc).
+// Returns the original expression wrapped in RateExpr if a rate suffix is found,
+// otherwise returns the original expression unchanged.
+func (p *Parser) tryParseRateSuffix(expr ast.Expr) ast.Expr {
+	// Check for /period syntax (e.g., /month, /year)
+	if p.check(token.SLASH) {
+		// Look ahead to see if this is a rate suffix, not division
+		if p.peek().Type == token.IDENTIFIER {
+			periodStr := p.peek().Literal
+			if period := types.ParsePeriod(periodStr); period != types.PeriodNone {
+				p.advance() // consume /
+				p.advance() // consume period identifier
+				return &ast.RateExpr{
+					Value:  expr,
+					Period: period,
+					Raw:    expr.String() + "/" + periodStr,
+				}
+			}
+		}
+	}
+
+	// Check for "per period" syntax (e.g., per month, per year)
+	if p.check(token.PER) {
+		if p.peek().Type == token.IDENTIFIER {
+			periodStr := p.peek().Literal
+			if period := types.ParsePeriod(periodStr); period != types.PeriodNone {
+				p.advance() // consume per
+				p.advance() // consume period identifier
+				return &ast.RateExpr{
+					Value:  expr,
+					Period: period,
+					Raw:    expr.String() + " per " + periodStr,
+				}
+			}
 		}
 	}
 
@@ -569,6 +612,16 @@ func (p *Parser) parseNumber() ast.Expr {
 	// But NOT if the suffix is 'x' or 'X' (multiplication operator)
 	if p.check(token.IDENTIFIER) && !p.isMultiplicationX() {
 		suffix := p.current().Literal
+
+		// Check for period as standalone identifier after number (e.g., "2 months")
+		if period := types.ParsePeriod(suffix); period != types.PeriodNone {
+			p.advance()
+			return &ast.PeriodExpr{
+				Period: period,
+				Count:  value,
+				Raw:    tok.Literal + " " + suffix,
+			}
+		}
 
 		// Try currency
 		if curr := types.ParseCurrency(suffix); curr != nil {
@@ -664,6 +717,7 @@ func (p *Parser) parseCurrencyWithSymbol() ast.Expr {
 // parseIdentifierOrValue parses an identifier, which could be:
 // - A variable reference
 // - A function call
+// - A period constant (year, month, etc.)
 // - A currency/unit name (e.g., "dollars", "kilometers")
 func (p *Parser) parseIdentifierOrValue() ast.Expr {
 	tok := p.advance()
@@ -672,6 +726,15 @@ func (p *Parser) parseIdentifierOrValue() ast.Expr {
 	// Check for function call: name(args)
 	if p.check(token.LPAREN) {
 		return p.parseFunctionCall(name)
+	}
+
+	// Check for standalone period constant (e.g., "year", "month")
+	if period := types.ParsePeriod(name); period != types.PeriodNone {
+		return &ast.PeriodExpr{
+			Period: period,
+			Count:  1,
+			Raw:    name,
+		}
 	}
 
 	// Check if it's a currency name (e.g., "dollars")
@@ -759,10 +822,31 @@ func (p *Parser) isMultiplicationX() bool {
 	}
 }
 
+// isRateDivision returns true if the current SLASH token is introducing a rate suffix,
+// not a division operation. This is context-sensitive lookahead.
+func (p *Parser) isRateDivision() bool {
+	if !p.check(token.SLASH) {
+		return false
+	}
+
+	// Check if next token is a period identifier
+	if p.peek().Type == token.IDENTIFIER {
+		periodStr := p.peek().Literal
+		return types.ParsePeriod(periodStr) != types.PeriodNone
+	}
+
+	return false
+}
+
 // isBinaryOp returns true if current token is a binary operator.
 func (p *Parser) isBinaryOp() bool {
-	// Standard operators
-	if p.checkAny(token.PLUS, token.MINUS, token.STAR, token.SLASH, token.CARET, token.POWER) {
+	// Standard operators (but exclude SLASH if it's a rate suffix)
+	if p.checkAny(token.PLUS, token.MINUS, token.STAR, token.CARET, token.POWER) {
+		return true
+	}
+
+	// SLASH is only a binary op if it's NOT introducing a rate suffix
+	if p.check(token.SLASH) && !p.isRateDivision() {
 		return true
 	}
 

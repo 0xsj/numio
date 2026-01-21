@@ -186,7 +186,15 @@ func (h *Highlighter) classifyTokenWithContext(tok token.Token, tokens []token.T
 		return ClassString
 
 	// Operators
-	case token.PLUS, token.MINUS, token.STAR, token.SLASH, token.CARET, token.POWER:
+	case token.PLUS, token.MINUS, token.STAR, token.CARET, token.POWER:
+		return ClassOperator
+
+	// Slash - could be operator or rate separator
+	case token.SLASH:
+		// Check if this is a rate separator (followed by period identifier)
+		if h.isRateSeparator(tokens, idx) {
+			return ClassOperator // Same styling, but could be different
+		}
 		return ClassOperator
 
 	// Parentheses
@@ -199,6 +207,10 @@ func (h *Highlighter) classifyTokenWithContext(tok token.Token, tokens []token.T
 
 	// Keywords
 	case token.IN, token.OF:
+		return ClassKeyword
+
+	// Per keyword (for rates)
+	case token.PER:
 		return ClassKeyword
 
 	// Function definition keyword
@@ -226,6 +238,10 @@ func (h *Highlighter) classifyTokenWithContext(tok token.Token, tokens []token.T
 		if expectParams && parenDepth > 0 {
 			return ClassParam
 		}
+		// Check if this is a period in rate context
+		if h.isPeriodAfterSlashOrPer(tokens, idx) {
+			return ClassPeriod
+		}
 		return h.classifyIdentifier(tok.Literal)
 
 	// Comma
@@ -237,7 +253,33 @@ func (h *Highlighter) classifyTokenWithContext(tok token.Token, tokens []token.T
 	}
 }
 
-// classifyIdentifier determines if an identifier is a function, currency, unit, etc.
+// isRateSeparator checks if a SLASH token is followed by a period identifier.
+func (h *Highlighter) isRateSeparator(tokens []token.Token, idx int) bool {
+	if tokens == nil || idx+1 >= len(tokens) {
+		return false
+	}
+	nextTok := tokens[idx+1]
+	if nextTok.Type == token.IDENTIFIER {
+		return types.IsPeriod(nextTok.Literal)
+	}
+	return false
+}
+
+// isPeriodAfterSlashOrPer checks if this identifier is a period following / or per.
+func (h *Highlighter) isPeriodAfterSlashOrPer(tokens []token.Token, idx int) bool {
+	if tokens == nil || idx == 0 {
+		return false
+	}
+	prevTok := tokens[idx-1]
+	if prevTok.Type == token.SLASH || prevTok.Type == token.PER {
+		// Check if current token is a period name
+		currTok := tokens[idx]
+		return types.IsPeriod(currTok.Literal)
+	}
+	return false
+}
+
+// classifyIdentifier determines if an identifier is a function, currency, unit, period, etc.
 func (h *Highlighter) classifyIdentifier(name string) TokenClass {
 	lower := strings.ToLower(name)
 
@@ -249,6 +291,11 @@ func (h *Highlighter) classifyIdentifier(name string) TokenClass {
 	// Check if it's a user-defined function
 	if h.userFuncs != nil && h.userFuncs.Has(name) {
 		return ClassUserFunc
+	}
+
+	// Check if it's a period constant (year, month, etc.)
+	if types.IsPeriod(name) {
+		return ClassPeriod
 	}
 
 	// Check if it's a currency code or name

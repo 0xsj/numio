@@ -46,7 +46,7 @@ const (
 	ClassOperator   // Operators: +, -, *, /, ^
 	ClassParen      // Parentheses: (, )
 	ClassIdentifier // Variable names
-	ClassKeyword    // Keywords: in, to, of, def
+	ClassKeyword    // Keywords: in, to, of, def, per
 	ClassFunction   // Built-in function names: sum, avg
 	ClassUserFunc   // User-defined function names
 	ClassFuncName   // Function name in definition: def [name](...)
@@ -55,6 +55,7 @@ const (
 	ClassUnit       // Unit codes: km, lb, hours
 	ClassCrypto     // Crypto codes: BTC, ETH
 	ClassMetal      // Metal codes: XAU, XAG
+	ClassPeriod     // Time period constants: year, month, day, hour
 	ClassComment    // Comments: # or //
 	ClassError      // Errors
 	ClassAssign     // Assignment: =
@@ -95,6 +96,8 @@ func (c TokenClass) String() string {
 		return "crypto"
 	case ClassMetal:
 		return "metal"
+	case ClassPeriod:
+		return "period"
 	case ClassComment:
 		return "comment"
 	case ClassError:

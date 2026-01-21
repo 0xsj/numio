@@ -46,13 +46,14 @@ func DefaultTheme() *Theme {
 			ClassIdentifier: Palette.White,
 			ClassKeyword:    Palette.Orange,
 			ClassFunction:   Palette.Blue,
-			ClassUserFunc:   Palette.Cyan, // User-defined functions - distinct from built-in
-			ClassFuncName:   Palette.Blue, // Function name in definition
-			ClassParam:      Palette.Pink, // Parameters in definition
+			ClassUserFunc:   Palette.Cyan,
+			ClassFuncName:   Palette.Blue,
+			ClassParam:      Palette.Pink,
 			ClassCurrency:   Palette.Green,
 			ClassUnit:       Palette.Yellow,
 			ClassCrypto:     Palette.Orange,
 			ClassMetal:      Palette.Yellow,
+			ClassPeriod:     Palette.Cyan, // Time periods: year, month, etc.
 			ClassComment:    Palette.Gray600,
 			ClassError:      Palette.Error,
 			ClassAssign:     Palette.Cyan,
@@ -74,13 +75,14 @@ func DraculaTheme() *Theme {
 			ClassIdentifier: NewColor("#f8f8f2"),
 			ClassKeyword:    NewColor("#ff79c6"),
 			ClassFunction:   NewColor("#50fa7b"),
-			ClassUserFunc:   NewColor("#8be9fd"), // Cyan for user functions
-			ClassFuncName:   NewColor("#50fa7b"), // Green for function name
-			ClassParam:      NewColor("#ffb86c"), // Orange for parameters
+			ClassUserFunc:   NewColor("#8be9fd"),
+			ClassFuncName:   NewColor("#50fa7b"),
+			ClassParam:      NewColor("#ffb86c"),
 			ClassCurrency:   NewColor("#50fa7b"),
 			ClassUnit:       NewColor("#f1fa8c"),
 			ClassCrypto:     NewColor("#ffb86c"),
 			ClassMetal:      NewColor("#f1fa8c"),
+			ClassPeriod:     NewColor("#8be9fd"), // Cyan for time periods
 			ClassComment:    NewColor("#6272a4"),
 			ClassError:      NewColor("#ff5555"),
 			ClassAssign:     NewColor("#ff79c6"),
@@ -102,13 +104,14 @@ func MonokaiTheme() *Theme {
 			ClassIdentifier: NewColor("#f8f8f2"),
 			ClassKeyword:    NewColor("#f92672"),
 			ClassFunction:   NewColor("#66d9ef"),
-			ClassUserFunc:   NewColor("#a6e22e"), // Green for user functions
-			ClassFuncName:   NewColor("#66d9ef"), // Blue for function name
-			ClassParam:      NewColor("#fd971f"), // Orange for parameters
+			ClassUserFunc:   NewColor("#a6e22e"),
+			ClassFuncName:   NewColor("#66d9ef"),
+			ClassParam:      NewColor("#fd971f"),
 			ClassCurrency:   NewColor("#a6e22e"),
 			ClassUnit:       NewColor("#e6db74"),
 			ClassCrypto:     NewColor("#fd971f"),
 			ClassMetal:      NewColor("#e6db74"),
+			ClassPeriod:     NewColor("#66d9ef"), // Blue for time periods
 			ClassComment:    NewColor("#75715e"),
 			ClassError:      NewColor("#f92672"),
 			ClassAssign:     NewColor("#f92672"),
@@ -130,13 +133,14 @@ func GruvboxTheme() *Theme {
 			ClassIdentifier: NewColor("#ebdbb2"),
 			ClassKeyword:    NewColor("#fb4934"),
 			ClassFunction:   NewColor("#83a598"),
-			ClassUserFunc:   NewColor("#8ec07c"), // Aqua for user functions
-			ClassFuncName:   NewColor("#83a598"), // Blue for function name
-			ClassParam:      NewColor("#fabd2f"), // Yellow for parameters
+			ClassUserFunc:   NewColor("#8ec07c"),
+			ClassFuncName:   NewColor("#83a598"),
+			ClassParam:      NewColor("#fabd2f"),
 			ClassCurrency:   NewColor("#b8bb26"),
 			ClassUnit:       NewColor("#fabd2f"),
 			ClassCrypto:     NewColor("#fe8019"),
 			ClassMetal:      NewColor("#fabd2f"),
+			ClassPeriod:     NewColor("#83a598"), // Blue for time periods
 			ClassComment:    NewColor("#928374"),
 			ClassError:      NewColor("#fb4934"),
 			ClassAssign:     NewColor("#8ec07c"),
@@ -158,13 +162,14 @@ func LightTheme() *Theme {
 			ClassIdentifier: NewColor("#24292e"),
 			ClassKeyword:    NewColor("#d73a49"),
 			ClassFunction:   NewColor("#005cc5"),
-			ClassUserFunc:   NewColor("#22863a"), // Green for user functions
-			ClassFuncName:   NewColor("#005cc5"), // Blue for function name
-			ClassParam:      NewColor("#e36209"), // Orange for parameters
+			ClassUserFunc:   NewColor("#22863a"),
+			ClassFuncName:   NewColor("#005cc5"),
+			ClassParam:      NewColor("#e36209"),
 			ClassCurrency:   NewColor("#22863a"),
 			ClassUnit:       NewColor("#b08800"),
 			ClassCrypto:     NewColor("#e36209"),
 			ClassMetal:      NewColor("#b08800"),
+			ClassPeriod:     NewColor("#005cc5"), // Blue for time periods
 			ClassComment:    NewColor("#6a737d"),
 			ClassError:      NewColor("#cb2431"),
 			ClassAssign:     NewColor("#d73a49"),
@@ -288,6 +293,11 @@ func (b *ThemeBuilder) Currency(hex string) *ThemeBuilder {
 // Unit sets the unit color.
 func (b *ThemeBuilder) Unit(hex string) *ThemeBuilder {
 	return b.SetHex(ClassUnit, hex)
+}
+
+// Period sets the time period color.
+func (b *ThemeBuilder) Period(hex string) *ThemeBuilder {
+	return b.SetHex(ClassPeriod, hex)
 }
 
 // Comment sets the comment color.

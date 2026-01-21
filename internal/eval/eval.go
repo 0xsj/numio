@@ -284,6 +284,13 @@ func (e *Evaluator) evalExpr(expr ast.Expr) types.Value {
 		}
 		return result
 
+	// Rate expressions
+	case *ast.RateExpr:
+		return e.evalRateExpr(ex)
+
+	case *ast.PeriodExpr:
+		return e.evalPeriodExpr(ex)
+
 	// References
 	case *ast.Identifier:
 		return e.evalIdentifier(ex)
@@ -331,6 +338,42 @@ func (e *Evaluator) evalExpr(expr ast.Expr) types.Value {
 }
 
 // ════════════════════════════════════════════════════════════════
+// RATE AND PERIOD EVALUATION
+// ════════════════════════════════════════════════════════════════
+
+// evalRateExpr evaluates a rate expression (e.g., 45000 TL/month).
+func (e *Evaluator) evalRateExpr(expr *ast.RateExpr) types.Value {
+	// Evaluate the base value
+	value := e.evalExpr(expr.Value)
+	if value.IsError() {
+		return value
+	}
+
+	// Add the period to create a rate value
+	result := value.WithPeriod(expr.Period)
+
+	if e.isTracing() {
+		e.trace.RecordLiteral(expr, result)
+	}
+
+	return result
+}
+
+// evalPeriodExpr evaluates a period expression (e.g., year, 2 months).
+// Returns a special "period value" that can be used in multiplication with rates.
+func (e *Evaluator) evalPeriodExpr(expr *ast.PeriodExpr) types.Value {
+	// Create a period value
+	// We store it as a number with a special marker so multiplication can detect it
+	result := types.Number(expr.Count).WithPeriod(expr.Period)
+
+	if e.isTracing() {
+		e.trace.RecordLiteral(expr, result)
+	}
+
+	return result
+}
+
+// ════════════════════════════════════════════════════════════════
 // IDENTIFIER EVALUATION
 // ════════════════════════════════════════════════════════════════
 
@@ -355,6 +398,17 @@ func (e *Evaluator) evalIdentifier(id *ast.Identifier) types.Value {
 	// Check for math constants
 	if val, ok := GetMathConstant(id.Name); ok {
 		result := types.Number(val)
+		if e.isTracing() {
+			e.trace.RecordVariable(id.Name, result)
+		}
+		return result
+	}
+
+	// Check for time period constants (fallback when used as plain identifier)
+	if period := types.ParsePeriod(id.Name); period != types.PeriodNone {
+		// Return the period's default multiplier as a number
+		// This handles cases like "rent * year" when year is not parsed as PeriodExpr
+		result := types.Number(period.DefaultMultiplier())
 		if e.isTracing() {
 			e.trace.RecordVariable(id.Name, result)
 		}
@@ -393,6 +447,26 @@ func (e *Evaluator) evalBinary(expr *ast.BinaryExpr) types.Value {
 		return right
 	}
 
+	// Special handling for rate * period multiplication
+	if expr.Op == ast.OpMul {
+		if result, handled := e.tryRatePeriodMultiply(left, right); handled {
+			if e.isTracing() {
+				e.trace.RecordBinaryOp(left, expr.Op, right, result)
+			}
+			return result
+		}
+	}
+
+	// Special handling for rate / period division (rate conversion)
+	if expr.Op == ast.OpDiv {
+		if result, handled := e.tryRatePeriodDivide(left, right); handled {
+			if e.isTracing() {
+				e.trace.RecordBinaryOp(left, expr.Op, right, result)
+			}
+			return result
+		}
+	}
+
 	result := ApplyBinaryOp(expr.Op, left, right, e.ctx)
 
 	if e.isTracing() {
@@ -400,6 +474,49 @@ func (e *Evaluator) evalBinary(expr *ast.BinaryExpr) types.Value {
 	}
 
 	return result
+}
+
+// tryRatePeriodMultiply handles multiplication between rates and periods.
+// Returns (result, true) if this was a rate*period operation, (empty, false) otherwise.
+func (e *Evaluator) tryRatePeriodMultiply(left, right types.Value) (types.Value, bool) {
+	// Case 1: rate * period (e.g., 45000TL/month * year)
+	if left.IsRate() && right.IsRate() && right.Kind == types.ValueNumber {
+		// right is a period value (number with period set)
+		return left.MultiplyByPeriod(right.Period, right.Num), true
+	}
+
+	// Case 2: period * rate (e.g., year * 45000TL/month)
+	if right.IsRate() && left.IsRate() && left.Kind == types.ValueNumber {
+		// left is a period value
+		return right.MultiplyByPeriod(left.Period, left.Num), true
+	}
+
+	// Case 3: value * period (no rate info, use period's default multiplier)
+	// e.g., rent * year where rent is just 45000TL (not a rate)
+	if !left.IsRate() && right.IsRate() && right.Kind == types.ValueNumber {
+		// right is a period value, left is a regular value
+		// Multiply by the period count times the default multiplier relative to month
+		multiplier := right.Num * right.Period.DefaultMultiplier()
+		return left.WithAmount(left.Num * multiplier), true
+	}
+
+	// Case 4: period * value
+	if left.IsRate() && left.Kind == types.ValueNumber && !right.IsRate() {
+		multiplier := left.Num * left.Period.DefaultMultiplier()
+		return right.WithAmount(right.Num * multiplier), true
+	}
+
+	return types.Empty(), false
+}
+
+// tryRatePeriodDivide handles division of rates by periods (rate conversion).
+// e.g., 540000TL/year / 12 = 45000TL/month (if properly structured)
+func (e *Evaluator) tryRatePeriodDivide(left, right types.Value) (types.Value, bool) {
+	// For now, just handle rate conversion
+	// e.g., salary/year -> salary/month would need explicit conversion syntax
+	// This is a placeholder for future enhancement
+
+	return types.Empty(), false
 }
 
 // ════════════════════════════════════════════════════════════════
