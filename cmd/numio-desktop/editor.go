@@ -166,6 +166,22 @@ func (w *EditorWidget) FocusLost() {
 
 // TypedRune handles character input.
 func (w *EditorWidget) TypedRune(r rune) {
+	// Handle Cmd+key combinations
+	if w.superPressed {
+		switch r {
+		case '/', '÷': // ÷ is what macOS might send for Cmd+/
+			w.toggleHelp()
+			return
+		case 'e', 'E':
+			w.showExplain()
+			w.Refresh()
+			return
+		case 'k', 'K':
+			w.ToggleVimMode()
+			return
+		}
+	}
+
 	// Close popup on any key
 	if w.activePopup != PopupNone {
 		w.activePopup = PopupNone
@@ -194,22 +210,29 @@ func (w *EditorWidget) TypedRune(r rune) {
 
 // TypedKey handles special key input.
 func (w *EditorWidget) TypedKey(ev *fyne.KeyEvent) {
-	// Handle function keys (work globally)
+	// Handle Cmd+key via TypedKey as well (some keys come here)
+	if w.superPressed {
+		switch ev.Name {
+		case fyne.KeySlash:
+			w.toggleHelp()
+			return
+		case fyne.KeyE:
+			w.showExplain()
+			w.Refresh()
+			return
+		case fyne.KeyK:
+			w.ToggleVimMode()
+			return
+		}
+	}
+
+	// Keep F-keys as backup
 	switch ev.Name {
 	case fyne.KeyF1:
-		if w.activePopup == PopupHelp {
-			w.activePopup = PopupNone
-		} else {
-			w.activePopup = PopupHelp
-		}
-		w.Refresh()
+		w.toggleHelp()
 		return
 	case fyne.KeyF2:
-		if w.activePopup == PopupExplain {
-			w.activePopup = PopupNone
-		} else {
-			w.showExplain()
-		}
+		w.showExplain()
 		w.Refresh()
 		return
 	case fyne.KeyF3:
@@ -283,6 +306,19 @@ func (w *EditorWidget) KeyUp(ev *fyne.KeyEvent) {
 }
 
 // ════════════════════════════════════════════════════════════════
+// HELP TOGGLE
+// ════════════════════════════════════════════════════════════════
+
+func (w *EditorWidget) toggleHelp() {
+	if w.activePopup == PopupHelp {
+		w.activePopup = PopupNone
+	} else {
+		w.activePopup = PopupHelp
+	}
+	w.Refresh()
+}
+
+// ════════════════════════════════════════════════════════════════
 // NORMAL EDITOR KEY HANDLING (non-vim)
 // ════════════════════════════════════════════════════════════════
 
@@ -349,9 +385,9 @@ func (w *EditorWidget) processVimNormalModeKey(ev KeyEvent) {
 	key := ev.Key
 
 	switch key {
-	// Help & Explain (also available via F1/F2)
+	// Help & Explain (also available via Cmd+/)
 	case "?":
-		w.activePopup = PopupHelp
+		w.toggleHelp()
 	case "e":
 		w.showExplain()
 
@@ -501,6 +537,17 @@ func (w *EditorWidget) showExplain() {
 	// Get current line
 	cursor := w.editor.Cursor()
 	line := w.editor.Buffer().Line(cursor.Row())
+
+	// If current line is empty, find the last non-empty line
+	if line == "" {
+		for i := cursor.Row() - 1; i >= 0; i-- {
+			candidate := w.editor.Buffer().Line(i)
+			if candidate != "" {
+				line = candidate
+				break
+			}
+		}
+	}
 
 	if line == "" {
 		return
@@ -745,9 +792,9 @@ func (r *editorRenderer) renderStatusBar(state *rpc.RenderState, size fyne.Size)
 	// Help hints (center)
 	var hints string
 	if w.vimMode {
-		hints = "F1 help   F2 explain   F3 normal mode"
+		hints = "⌘/ help   ⌘E explain   ⌘K normal mode"
 	} else {
-		hints = "F1 help   F2 explain   F3 vim mode"
+		hints = "⌘/ help   ⌘E explain   ⌘K vim mode"
 	}
 	hintsText := canvas.NewText(hints, ColorStatusText)
 	hintsText.TextSize = 11
@@ -795,9 +842,9 @@ func (r *editorRenderer) renderPopup(size fyne.Size) {
 				"",
 				"General",
 				"  Esc          Normal mode",
-				"  F1           Toggle help",
-				"  F2           Explain calculation",
-				"  F3           Switch to normal mode",
+				"  ⌘/           Toggle help",
+				"  ⌘E           Explain calculation",
+				"  ⌘K           Switch to normal mode",
 				"",
 				"Press any key to close",
 			}
@@ -814,9 +861,9 @@ func (r *editorRenderer) renderPopup(size fyne.Size) {
 				"    time in tokyo",
 				"",
 				"Shortcuts",
-				"  F1            Help",
-				"  F2            Explain calculation",
-				"  F3            Switch to vim mode",
+				"  ⌘/            Help",
+				"  ⌘E            Explain calculation",
+				"  ⌘K            Switch to vim mode",
 				"",
 				"Press any key to close",
 			}
