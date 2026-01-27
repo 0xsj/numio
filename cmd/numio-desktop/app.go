@@ -36,15 +36,40 @@ func (a *App) Run() {
 
 	// Create main window
 	a.window = a.fyneApp.NewWindow("Numio")
-	a.window.Resize(fyne.NewSize(800, 600))
+	a.window.Resize(fyne.NewSize(700, 500))
 	a.window.CenterOnScreen()
 
 	// Create editor widget
 	a.editor = NewEditorWidget()
 
-	// Set up layout
-	content := container.NewMax(a.editor)
+	// Set up layout - no padding for clean look
+	content := container.NewWithoutLayout(a.editor)
+	a.editor.Resize(a.window.Canvas().Size())
+
+	// Handle resize
+	a.window.Canvas().SetOnTypedKey(func(ev *fyne.KeyEvent) {
+		// Forward to editor
+		a.editor.TypedKey(ev)
+	})
+
 	a.window.SetContent(content)
+
+	// Resize editor when window resizes
+	a.window.Canvas().SetContent(content)
+	go func() {
+		// Give window time to initialize
+		time.Sleep(50 * time.Millisecond)
+		fyne.Do(func() {
+			size := a.window.Canvas().Size()
+			a.editor.Resize(size)
+			a.editor.Refresh()
+		})
+	}()
+
+	// Listen for resize events
+	a.window.SetOnClosed(func() {
+		a.Stop()
+	})
 
 	// Focus the editor
 	a.window.Canvas().Focus(a.editor)
@@ -52,10 +77,8 @@ func (a *App) Run() {
 	// Start cursor blink
 	a.startCursorBlink()
 
-	// Handle window close
-	a.window.SetOnClosed(func() {
-		a.Stop()
-	})
+	// Set up window resize handler
+	a.setupResizeHandler()
 
 	// Show and run
 	a.window.ShowAndRun()
@@ -70,17 +93,48 @@ func (a *App) Stop() {
 }
 
 // ════════════════════════════════════════════════════════════════
+// RESIZE HANDLER
+// ════════════════════════════════════════════════════════════════
+
+func (a *App) setupResizeHandler() {
+	// Poll for size changes
+	go func() {
+		var lastSize fyne.Size
+		ticker := time.NewTicker(100 * time.Millisecond)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ticker.C:
+				fyne.Do(func() {
+					size := a.window.Canvas().Size()
+					if size != lastSize && size.Width > 0 && size.Height > 0 {
+						lastSize = size
+						a.editor.Resize(size)
+						a.editor.Refresh()
+					}
+				})
+			case <-a.done:
+				return
+			}
+		}
+	}()
+}
+
+// ════════════════════════════════════════════════════════════════
 // CURSOR BLINK
 // ════════════════════════════════════════════════════════════════
 
 func (a *App) startCursorBlink() {
-	a.cursorTick = time.NewTicker(500 * time.Millisecond)
+	a.cursorTick = time.NewTicker(530 * time.Millisecond)
 
 	go func() {
 		for {
 			select {
 			case <-a.cursorTick.C:
-				a.editor.ToggleCursor()
+				fyne.Do(func() {
+					a.editor.ToggleCursor()
+				})
 			case <-a.done:
 				return
 			}

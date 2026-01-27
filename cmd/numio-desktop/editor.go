@@ -14,6 +14,18 @@ import (
 )
 
 // ════════════════════════════════════════════════════════════════
+// POPUP TYPES
+// ════════════════════════════════════════════════════════════════
+
+type PopupType int
+
+const (
+	PopupNone PopupType = iota
+	PopupHelp
+	PopupExplain
+)
+
+// ════════════════════════════════════════════════════════════════
 // EDITOR WIDGET
 // ════════════════════════════════════════════════════════════════
 
@@ -31,8 +43,8 @@ type EditorWidget struct {
 	leftPadding     float32
 	rightPadding    float32
 	topPadding      float32
-	lineNumWidth    float32
 	statusBarHeight float32
+	lineSpacing     float32
 
 	// Cursor blink state
 	cursorVisible bool
@@ -42,26 +54,63 @@ type EditorWidget struct {
 	altPressed   bool
 	shiftPressed bool
 	superPressed bool
+
+	// Popup state
+	activePopup   PopupType
+	explainResult string
+
+	// Vim mode toggle
+	vimMode bool
 }
 
 // NewEditorWidget creates a new editor widget.
 func NewEditorWidget() *EditorWidget {
 	w := &EditorWidget{
 		editor:          editor.NewEditor(),
-		lineHeight:      20,
+		lineHeight:      24,
 		charWidth:       8.4,
-		leftPadding:     12,
-		rightPadding:    12,
-		topPadding:      8,
-		lineNumWidth:    40,
-		statusBarHeight: 24,
+		leftPadding:     20,
+		rightPadding:    20,
+		topPadding:      16,
+		statusBarHeight: 28,
+		lineSpacing:     4,
 		cursorVisible:   true,
+		activePopup:     PopupNone,
+		vimMode:         false, // Default: normal editor mode
 	}
+
+	// Start in insert mode when vim mode is off
+	w.editor.EnterInsertMode()
 
 	w.ExtendBaseWidget(w)
 	w.updateState()
 
 	return w
+}
+
+// ════════════════════════════════════════════════════════════════
+// VIM MODE TOGGLE
+// ════════════════════════════════════════════════════════════════
+
+// SetVimMode enables or disables vim keybindings.
+func (w *EditorWidget) SetVimMode(enabled bool) {
+	w.vimMode = enabled
+	if !enabled {
+		// Always stay in insert mode when vim mode is off
+		w.editor.EnterInsertMode()
+	}
+	w.updateState()
+	w.Refresh()
+}
+
+// ToggleVimMode toggles vim keybindings on/off.
+func (w *EditorWidget) ToggleVimMode() {
+	w.SetVimMode(!w.vimMode)
+}
+
+// VimMode returns whether vim mode is enabled.
+func (w *EditorWidget) VimMode() bool {
+	return w.vimMode
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -83,8 +132,8 @@ func (w *EditorWidget) Resize(size fyne.Size) {
 	w.BaseWidget.Resize(size)
 
 	// Calculate viewport size in characters
-	cols := int((size.Width - w.leftPadding - w.rightPadding - w.lineNumWidth) / w.charWidth)
-	rows := int((size.Height - w.topPadding*2 - w.statusBarHeight) / w.lineHeight)
+	cols := int((size.Width - w.leftPadding - w.rightPadding) / w.charWidth)
+	rows := int((size.Height - w.topPadding*2 - w.statusBarHeight) / (w.lineHeight + w.lineSpacing))
 
 	if cols < 1 {
 		cols = 1
@@ -117,20 +166,84 @@ func (w *EditorWidget) FocusLost() {
 
 // TypedRune handles character input.
 func (w *EditorWidget) TypedRune(r rune) {
-	w.mu.Lock()
-	w.handleRune(r)
-	w.mu.Unlock()
+	// Close popup on any key
+	if w.activePopup != PopupNone {
+		w.activePopup = PopupNone
+		w.Refresh()
+		return
+	}
 
+	w.mu.Lock()
+
+	if w.vimMode {
+		// Vim mode: handle based on current mode
+		if w.editor.Mode() == editor.ModeInsert {
+			w.editor.InsertChar(r)
+		} else {
+			w.processVimKey(KeyEvent{Key: string(r)})
+		}
+	} else {
+		// Normal editor mode: always insert
+		w.editor.InsertChar(r)
+	}
+
+	w.mu.Unlock()
 	w.updateState()
 	w.Refresh()
 }
 
 // TypedKey handles special key input.
 func (w *EditorWidget) TypedKey(ev *fyne.KeyEvent) {
-	w.mu.Lock()
-	w.handleKey(ev)
-	w.mu.Unlock()
+	// Handle function keys (work globally)
+	switch ev.Name {
+	case fyne.KeyF1:
+		if w.activePopup == PopupHelp {
+			w.activePopup = PopupNone
+		} else {
+			w.activePopup = PopupHelp
+		}
+		w.Refresh()
+		return
+	case fyne.KeyF2:
+		if w.activePopup == PopupExplain {
+			w.activePopup = PopupNone
+		} else {
+			w.showExplain()
+		}
+		w.Refresh()
+		return
+	case fyne.KeyF3:
+		w.ToggleVimMode()
+		return
+	}
 
+	// Close popup on Escape or any key
+	if w.activePopup != PopupNone {
+		w.activePopup = PopupNone
+		w.Refresh()
+		return
+	}
+
+	key := translateKey(ev.Name)
+
+	w.mu.Lock()
+
+	// Skip if it's a regular character (handled by TypedRune)
+	if len(key) == 1 && key[0] >= 32 && key[0] < 127 {
+		w.mu.Unlock()
+		return
+	}
+
+	if w.vimMode {
+		w.processVimKey(KeyEvent{
+			Key:       key,
+			Modifiers: w.currentModifiers(),
+		})
+	} else {
+		w.processNormalEditorKey(key)
+	}
+
+	w.mu.Unlock()
 	w.updateState()
 	w.Refresh()
 }
@@ -143,20 +256,15 @@ var _ desktop.Keyable = (*EditorWidget)(nil)
 
 // KeyDown handles key press with modifiers.
 func (w *EditorWidget) KeyDown(ev *fyne.KeyEvent) {
-	// Track modifier state
 	switch ev.Name {
 	case desktop.KeyControlLeft, desktop.KeyControlRight:
 		w.ctrlPressed = true
-		return
 	case desktop.KeyAltLeft, desktop.KeyAltRight:
 		w.altPressed = true
-		return
 	case desktop.KeyShiftLeft, desktop.KeyShiftRight:
 		w.shiftPressed = true
-		return
 	case desktop.KeySuperLeft, desktop.KeySuperRight:
 		w.superPressed = true
-		return
 	}
 }
 
@@ -175,50 +283,78 @@ func (w *EditorWidget) KeyUp(ev *fyne.KeyEvent) {
 }
 
 // ════════════════════════════════════════════════════════════════
-// KEY HANDLING
+// NORMAL EDITOR KEY HANDLING (non-vim)
 // ════════════════════════════════════════════════════════════════
 
-func (w *EditorWidget) handleKey(ev *fyne.KeyEvent) {
-	keyEvent := TranslateKeyEventWithMods(ev, w.ctrlPressed, w.altPressed, w.shiftPressed, w.superPressed)
-	w.processKey(keyEvent)
+func (w *EditorWidget) processNormalEditorKey(key string) {
+	switch key {
+	case "Backspace":
+		w.editor.DeleteCharBack()
+	case "Delete":
+		w.editor.DeleteChar()
+	case "Enter":
+		w.editor.InsertNewline()
+	case "Tab":
+		w.editor.InsertString("  ")
+	case "ArrowLeft":
+		w.editor.MoveLeft(1)
+	case "ArrowRight":
+		w.editor.MoveRight(1)
+	case "ArrowUp":
+		w.editor.MoveUp(1)
+	case "ArrowDown":
+		w.editor.MoveDown(1)
+	case "Home":
+		w.editor.MoveToLineStart()
+	case "End":
+		w.editor.MoveToLineEnd()
+	}
 }
 
-func (w *EditorWidget) handleRune(r rune) {
-	keyEvent := TranslateRuneWithMods(r, w.ctrlPressed, w.altPressed, w.shiftPressed, w.superPressed)
-	w.processKey(keyEvent)
+// ════════════════════════════════════════════════════════════════
+// VIM KEY HANDLING
+// ════════════════════════════════════════════════════════════════
+
+func (w *EditorWidget) currentModifiers() []string {
+	mods := make([]string, 0, 4)
+	if w.ctrlPressed {
+		mods = append(mods, "ctrl")
+	}
+	if w.altPressed {
+		mods = append(mods, "alt")
+	}
+	if w.shiftPressed {
+		mods = append(mods, "shift")
+	}
+	if w.superPressed {
+		mods = append(mods, "cmd")
+	}
+	return mods
 }
 
-func (w *EditorWidget) processKey(ev KeyEvent) {
+func (w *EditorWidget) processVimKey(ev KeyEvent) {
 	mode := w.editor.Mode()
 
 	switch mode {
 	case editor.ModeNormal:
-		w.processNormalModeKey(ev)
+		w.processVimNormalModeKey(ev)
 	case editor.ModeInsert:
-		w.processInsertModeKey(ev)
+		w.processVimInsertModeKey(ev)
 	case editor.ModeVisual:
-		w.processVisualModeKey(ev)
+		w.processVimVisualModeKey(ev)
 	}
 }
 
-func (w *EditorWidget) processNormalModeKey(ev KeyEvent) {
+func (w *EditorWidget) processVimNormalModeKey(ev KeyEvent) {
 	key := ev.Key
 
-	// Handle Ctrl combinations
-	if ev.IsCtrl() {
-		switch key {
-		case "r":
-			w.editor.Redo()
-		case "u":
-			w.editor.MoveUp(w.editor.Viewport().Height() / 2)
-		case "d":
-			w.editor.MoveDown(w.editor.Viewport().Height() / 2)
-		}
-		return
-	}
-
-	// Normal mode keys
 	switch key {
+	// Help & Explain (also available via F1/F2)
+	case "?":
+		w.activePopup = PopupHelp
+	case "e":
+		w.showExplain()
+
 	// Mode switching
 	case "i":
 		w.editor.EnterInsertMode()
@@ -283,25 +419,12 @@ func (w *EditorWidget) processNormalModeKey(ev KeyEvent) {
 	}
 }
 
-func (w *EditorWidget) processInsertModeKey(ev KeyEvent) {
+func (w *EditorWidget) processVimInsertModeKey(ev KeyEvent) {
 	key := ev.Key
 
 	// Escape exits insert mode
 	if key == "Escape" {
 		w.editor.EnterNormalMode()
-		return
-	}
-
-	// Handle Ctrl combinations
-	if ev.IsCtrl() {
-		switch key {
-		case "c":
-			w.editor.EnterNormalMode()
-		case "w":
-			w.editor.DeleteWord()
-		case "u":
-			w.editor.DeleteToLineEnd()
-		}
 		return
 	}
 
@@ -323,15 +446,10 @@ func (w *EditorWidget) processInsertModeKey(ev KeyEvent) {
 		w.editor.MoveUp(1)
 	case "ArrowDown":
 		w.editor.MoveDown(1)
-	default:
-		// Insert regular character
-		if len(key) == 1 {
-			w.editor.InsertChar(rune(key[0]))
-		}
 	}
 }
 
-func (w *EditorWidget) processVisualModeKey(ev KeyEvent) {
+func (w *EditorWidget) processVimVisualModeKey(ev KeyEvent) {
 	key := ev.Key
 
 	// Escape exits visual mode
@@ -373,6 +491,41 @@ func (w *EditorWidget) processVisualModeKey(ev KeyEvent) {
 	case "v":
 		w.editor.EnterNormalMode()
 	}
+}
+
+// ════════════════════════════════════════════════════════════════
+// EXPLAIN POPUP
+// ════════════════════════════════════════════════════════════════
+
+func (w *EditorWidget) showExplain() {
+	// Get current line
+	cursor := w.editor.Cursor()
+	line := w.editor.Buffer().Line(cursor.Row())
+
+	if line == "" {
+		return
+	}
+
+	// Get explanation from engine
+	result := w.editor.Engine().Explain(line)
+	if result == nil {
+		return
+	}
+
+	// Build explanation text
+	w.explainResult = "Input: " + line + "\n\n"
+
+	if len(result.Steps) > 0 {
+		w.explainResult += "Steps:\n"
+		for _, step := range result.Steps {
+			w.explainResult += "  " + step + "\n"
+		}
+		w.explainResult += "\n"
+	}
+
+	w.explainResult += "Result: " + result.Value.String()
+
+	w.activePopup = PopupExplain
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -455,11 +608,21 @@ func (r *editorRenderer) Refresh() {
 	}
 
 	size := r.widget.Size()
+	w := r.widget
+
+	// Calculate visible lines
+	visibleLines := int((size.Height - w.topPadding*2 - w.statusBarHeight) / (w.lineHeight + w.lineSpacing))
 
 	// Render lines
-	for i, line := range state.Lines {
-		y := r.widget.topPadding + float32(i)*r.widget.lineHeight
-		r.renderLine(line, y, size.Width)
+	for i := 0; i < visibleLines; i++ {
+		y := w.topPadding + float32(i)*(w.lineHeight+w.lineSpacing)
+
+		if i < len(state.Lines) {
+			r.renderLine(state.Lines[i], y, size.Width)
+		} else if w.vimMode {
+			// Only show tildes in vim mode
+			r.renderTilde(y)
+		}
 	}
 
 	// Render cursor
@@ -468,27 +631,22 @@ func (r *editorRenderer) Refresh() {
 	}
 
 	// Render status bar
-	if state.StatusBar != nil {
-		r.renderStatusBar(state.StatusBar, size)
+	r.renderStatusBar(state, size)
+
+	// Render popup if active
+	if w.activePopup != PopupNone {
+		r.renderPopup(size)
 	}
 }
 
 func (r *editorRenderer) renderLine(line rpc.RenderLine, y float32, width float32) {
 	w := r.widget
 
-	// Line number
-	lineNumText := canvas.NewText(intToStr(line.Number), ColorLineNumber)
-	lineNumText.TextSize = 13
-	lineNumText.TextStyle = fyne.TextStyle{Monospace: true}
-	lineNumX := w.leftPadding + w.lineNumWidth - lineNumText.MinSize().Width - 8
-	lineNumText.Move(fyne.NewPos(lineNumX, y))
-	r.objects = append(r.objects, lineNumText)
-
-	// Input spans
-	x := w.leftPadding + w.lineNumWidth
+	// Input spans (left-aligned)
+	x := w.leftPadding
 	for _, span := range line.Input {
 		text := canvas.NewText(span.Text, StyleColor(string(span.Style)))
-		text.TextSize = 13
+		text.TextSize = 14
 		text.TextStyle = fyne.TextStyle{Monospace: true}
 		text.Move(fyne.NewPos(x, y))
 		r.objects = append(r.objects, text)
@@ -501,27 +659,17 @@ func (r *editorRenderer) renderLine(line rpc.RenderLine, y float32, width float3
 		resultWidth := float32(0)
 		for _, span := range line.Result {
 			text := canvas.NewText(span.Text, StyleColor(string(span.Style)))
-			text.TextSize = 13
+			text.TextSize = 14
 			text.TextStyle = fyne.TextStyle{Monospace: true}
 			resultWidth += text.MinSize().Width
 		}
 
-		// Add "=" separator
-		eqText := canvas.NewText(" = ", ColorComment)
-		eqText.TextSize = 13
-		eqText.TextStyle = fyne.TextStyle{Monospace: true}
-		resultWidth += eqText.MinSize().Width
-
 		// Position from right
 		resultX := width - w.rightPadding - resultWidth
 
-		eqText.Move(fyne.NewPos(resultX, y))
-		r.objects = append(r.objects, eqText)
-		resultX += eqText.MinSize().Width
-
 		for _, span := range line.Result {
 			text := canvas.NewText(span.Text, StyleColor(string(span.Style)))
-			text.TextSize = 13
+			text.TextSize = 14
 			text.TextStyle = fyne.TextStyle{Monospace: true}
 			text.Move(fyne.NewPos(resultX, y))
 			r.objects = append(r.objects, text)
@@ -530,29 +678,42 @@ func (r *editorRenderer) renderLine(line rpc.RenderLine, y float32, width float3
 	}
 }
 
+func (r *editorRenderer) renderTilde(y float32) {
+	w := r.widget
+	tilde := canvas.NewText("~", ColorTilde)
+	tilde.TextSize = 14
+	tilde.TextStyle = fyne.TextStyle{Monospace: true}
+	tilde.Move(fyne.NewPos(w.leftPadding, y))
+	r.objects = append(r.objects, tilde)
+}
+
 func (r *editorRenderer) renderCursor(cursor rpc.CursorState) {
 	w := r.widget
 
-	x := w.leftPadding + w.lineNumWidth + float32(cursor.Col)*w.charWidth
-	y := w.topPadding + float32(cursor.Row)*w.lineHeight
+	x := w.leftPadding + float32(cursor.Col)*w.charWidth
+	y := w.topPadding + float32(cursor.Row)*(w.lineHeight+w.lineSpacing)
+
+	// Cursor should match text size
+	cursorHeight := float32(16)
+	cursorY := y + (w.lineHeight-cursorHeight)/2
 
 	var cursorRect *canvas.Rectangle
 
 	switch cursor.Style {
 	case rpc.CursorBlock:
-		cursorRect = canvas.NewRectangle(color.RGBA{R: 255, G: 255, B: 255, A: 180})
-		cursorRect.Resize(fyne.NewSize(w.charWidth, w.lineHeight-4))
-		cursorRect.Move(fyne.NewPos(x, y+2))
+		cursorRect = canvas.NewRectangle(ColorCursorBlock)
+		cursorRect.Resize(fyne.NewSize(w.charWidth, cursorHeight))
+		cursorRect.Move(fyne.NewPos(x, cursorY))
 
 	case rpc.CursorLine:
 		cursorRect = canvas.NewRectangle(ColorCursor)
-		cursorRect.Resize(fyne.NewSize(2, w.lineHeight-4))
-		cursorRect.Move(fyne.NewPos(x, y+2))
+		cursorRect.Resize(fyne.NewSize(2, cursorHeight))
+		cursorRect.Move(fyne.NewPos(x, cursorY))
 
 	case rpc.CursorUnderline:
 		cursorRect = canvas.NewRectangle(ColorCursor)
 		cursorRect.Resize(fyne.NewSize(w.charWidth, 2))
-		cursorRect.Move(fyne.NewPos(x, y+w.lineHeight-2))
+		cursorRect.Move(fyne.NewPos(x, y+w.lineHeight-4))
 	}
 
 	if cursorRect != nil {
@@ -560,7 +721,7 @@ func (r *editorRenderer) renderCursor(cursor rpc.CursorState) {
 	}
 }
 
-func (r *editorRenderer) renderStatusBar(statusBar *rpc.StatusBar, size fyne.Size) {
+func (r *editorRenderer) renderStatusBar(state *rpc.RenderState, size fyne.Size) {
 	w := r.widget
 
 	// Background
@@ -570,23 +731,157 @@ func (r *editorRenderer) renderStatusBar(statusBar *rpc.StatusBar, size fyne.Siz
 	barBg.Move(fyne.NewPos(0, barY))
 	r.objects = append(r.objects, barBg)
 
-	// Mode indicator
-	if statusBar.Mode != "" {
-		modeText := canvas.NewText(" "+statusBar.Mode+" ", ModeColor(statusBar.Mode))
-		modeText.TextSize = 11
+	textY := barY + 6
+
+	// Mode indicator (left) - only show in vim mode
+	if w.vimMode && state.StatusBar != nil && state.StatusBar.Mode != "" {
+		modeText := canvas.NewText(state.StatusBar.Mode, ModeColor(state.StatusBar.Mode))
+		modeText.TextSize = 12
 		modeText.TextStyle = fyne.TextStyle{Monospace: true, Bold: true}
-		modeText.Move(fyne.NewPos(w.leftPadding, barY+5))
+		modeText.Move(fyne.NewPos(w.leftPadding, textY))
 		r.objects = append(r.objects, modeText)
 	}
 
-	// Position
-	if statusBar.Position != "" {
-		posText := canvas.NewText(statusBar.Position, ColorComment)
-		posText.TextSize = 11
+	// Help hints (center)
+	var hints string
+	if w.vimMode {
+		hints = "F1 help   F2 explain   F3 normal mode"
+	} else {
+		hints = "F1 help   F2 explain   F3 vim mode"
+	}
+	hintsText := canvas.NewText(hints, ColorStatusText)
+	hintsText.TextSize = 11
+	hintsText.TextStyle = fyne.TextStyle{Monospace: true}
+	hintsX := (size.Width - hintsText.MinSize().Width) / 2
+	hintsText.Move(fyne.NewPos(hintsX, textY))
+	r.objects = append(r.objects, hintsText)
+
+	// Position (right)
+	if state.StatusBar != nil && state.StatusBar.Position != "" {
+		posText := canvas.NewText(state.StatusBar.Position, ColorStatusText)
+		posText.TextSize = 12
 		posText.TextStyle = fyne.TextStyle{Monospace: true}
 		posX := size.Width - w.rightPadding - posText.MinSize().Width
-		posText.Move(fyne.NewPos(posX, barY+5))
+		posText.Move(fyne.NewPos(posX, textY))
 		r.objects = append(r.objects, posText)
+	}
+}
+
+func (r *editorRenderer) renderPopup(size fyne.Size) {
+	w := r.widget
+
+	var title string
+	var content []string
+
+	switch w.activePopup {
+	case PopupHelp:
+		title = "Help"
+		if w.vimMode {
+			content = []string{
+				"",
+				"Navigation",
+				"  h/j/k/l      Move cursor",
+				"  w/b          Next/prev word",
+				"  0/$          Start/end of line",
+				"  gg/G         Top/bottom of file",
+				"",
+				"Editing",
+				"  i/a          Insert/append mode",
+				"  o/O          Open line below/above",
+				"  x            Delete character",
+				"  dd           Delete line",
+				"  u            Undo",
+				"  p            Paste",
+				"",
+				"General",
+				"  Esc          Normal mode",
+				"  F1           Toggle help",
+				"  F2           Explain calculation",
+				"  F3           Switch to normal mode",
+				"",
+				"Press any key to close",
+			}
+		} else {
+			content = []string{
+				"",
+				"Numio Calculator",
+				"",
+				"  Type expressions and see results",
+				"  Examples:",
+				"    1 + 1",
+				"    500 usd to eur",
+				"    100 km to miles",
+				"    time in tokyo",
+				"",
+				"Shortcuts",
+				"  F1            Help",
+				"  F2            Explain calculation",
+				"  F3            Switch to vim mode",
+				"",
+				"Press any key to close",
+			}
+		}
+
+	case PopupExplain:
+		title = "Explanation"
+		content = []string{""}
+		line := ""
+		for _, ch := range w.explainResult {
+			if ch == '\n' {
+				content = append(content, "  "+line)
+				line = ""
+			} else {
+				line += string(ch)
+			}
+		}
+		if line != "" {
+			content = append(content, "  "+line)
+		}
+		content = append(content, "", "Press any key to close")
+	}
+
+	// Calculate popup dimensions
+	popupWidth := float32(360)
+	popupHeight := float32(len(content)*18 + 50)
+	popupX := (size.Width - popupWidth) / 2
+	popupY := (size.Height - popupHeight) / 2
+
+	// Background
+	bg := canvas.NewRectangle(ColorPopupBackground)
+	bg.Resize(fyne.NewSize(popupWidth, popupHeight))
+	bg.Move(fyne.NewPos(popupX, popupY))
+	bg.StrokeColor = ColorPopupBorder
+	bg.StrokeWidth = 1
+	r.objects = append(r.objects, bg)
+
+	// Title
+	titleText := canvas.NewText(title, ColorPopupTitle)
+	titleText.TextSize = 14
+	titleText.TextStyle = fyne.TextStyle{Monospace: true, Bold: true}
+	titleText.Move(fyne.NewPos(popupX+16, popupY+12))
+	r.objects = append(r.objects, titleText)
+
+	// Content
+	y := popupY + 36
+	for _, line := range content {
+		var textColor color.Color = ColorPopupDesc
+
+		// Check if it's a heading (no leading spaces, not empty)
+		if len(line) > 0 && line[0] != ' ' {
+			textColor = ColorPopupHeading
+		}
+
+		// Check if it's the hint line
+		if line == "Press any key to close" {
+			textColor = ColorPopupHint
+		}
+
+		text := canvas.NewText(line, textColor)
+		text.TextSize = 12
+		text.TextStyle = fyne.TextStyle{Monospace: true}
+		text.Move(fyne.NewPos(popupX+16, y))
+		r.objects = append(r.objects, text)
+		y += 18
 	}
 }
 
@@ -597,34 +892,3 @@ func (r *editorRenderer) Objects() []fyne.CanvasObject {
 
 // Destroy cleans up resources.
 func (r *editorRenderer) Destroy() {}
-
-// ════════════════════════════════════════════════════════════════
-// HELPERS
-// ════════════════════════════════════════════════════════════════
-
-func intToStr(n int) string {
-	if n == 0 {
-		return "0"
-	}
-
-	negative := n < 0
-	if negative {
-		n = -n
-	}
-
-	var buf [20]byte
-	i := len(buf)
-
-	for n > 0 {
-		i--
-		buf[i] = byte('0' + n%10)
-		n /= 10
-	}
-
-	if negative {
-		i--
-		buf[i] = '-'
-	}
-
-	return string(buf[i:])
-}

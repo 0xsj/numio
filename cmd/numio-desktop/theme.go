@@ -26,9 +26,11 @@ func (t *NumioTheme) Color(name fyne.ThemeColorName, variant fyne.ThemeVariant) 
 	case theme.ColorNamePrimary:
 		return ColorPrimary
 	case theme.ColorNameDisabled:
-		return ColorComment
+		return ColorMuted
 	case theme.ColorNameSelection:
 		return ColorSelection
+	case theme.ColorNameShadow:
+		return color.RGBA{R: 0, G: 0, B: 0, A: 60}
 	default:
 		return theme.DefaultTheme().Color(name, variant)
 	}
@@ -50,52 +52,66 @@ func (t *NumioTheme) Size(name fyne.ThemeSizeName) float32 {
 	case theme.SizeNameText:
 		return 14
 	case theme.SizeNamePadding:
-		return 4
+		return 6
 	case theme.SizeNameInlineIcon:
 		return 16
+	case theme.SizeNameScrollBar:
+		return 8
 	default:
 		return theme.DefaultTheme().Size(name)
 	}
 }
 
 // ════════════════════════════════════════════════════════════════
-// COLORS
+// COLORS - TRANSLUCENT DARK THEME
 // ════════════════════════════════════════════════════════════════
 
 var (
-	// Base colors
-	ColorBackground = color.RGBA{R: 26, G: 26, B: 30, A: 255}    // #1a1a1e
-	ColorForeground = color.RGBA{R: 217, G: 217, B: 217, A: 255} // #d9d9d9
-	ColorPrimary    = color.RGBA{R: 125, G: 185, B: 235, A: 255} // #7db9eb
-	ColorSelection  = color.RGBA{R: 64, G: 89, B: 140, A: 255}   // #40598c
+	// Base colors (with transparency for glass effect)
+	ColorBackground      = color.RGBA{R: 30, G: 30, B: 35, A: 230} // Semi-transparent dark
+	ColorBackgroundSolid = color.RGBA{R: 30, G: 30, B: 35, A: 255} // Solid for popups
+	ColorForeground      = color.RGBA{R: 220, G: 220, B: 220, A: 255}
+	ColorMuted           = color.RGBA{R: 100, G: 100, B: 100, A: 255}
+	ColorPrimary         = color.RGBA{R: 130, G: 190, B: 240, A: 255}
+	ColorSelection       = color.RGBA{R: 60, G: 85, B: 130, A: 200}
 
-	// Syntax colors
-	ColorNumber   = color.RGBA{R: 186, G: 150, B: 227, A: 255} // #ba96e3 - purple
-	ColorOperator = color.RGBA{R: 171, G: 194, B: 227, A: 255} // #abc2e3 - light blue
-	ColorPercent  = color.RGBA{R: 227, G: 186, B: 150, A: 255} // #e3ba96 - orange
-	ColorCurrency = color.RGBA{R: 150, G: 227, B: 161, A: 255} // #96e3a1 - green
-	ColorUnit     = color.RGBA{R: 150, G: 209, B: 227, A: 255} // #96d1e3 - cyan
-	ColorMetal    = color.RGBA{R: 227, G: 209, B: 125, A: 255} // #e3d17d - gold
-	ColorCrypto   = color.RGBA{R: 227, G: 166, B: 84, A: 255}  // #e3a654 - bitcoin orange
-	ColorFunction = color.RGBA{R: 125, G: 186, B: 235, A: 255} // #7dbae3 - blue
-	ColorVariable = color.RGBA{R: 235, G: 125, B: 125, A: 255} // #eb7d7d - red
-	ColorComment  = color.RGBA{R: 128, G: 128, B: 128, A: 255} // #808080 - gray
-	ColorString   = color.RGBA{R: 227, G: 186, B: 150, A: 255} // #e3ba96 - orange
-	ColorKeyword  = color.RGBA{R: 227, G: 125, B: 181, A: 255} // #e37db5 - pink
-	ColorResult   = color.RGBA{R: 125, G: 227, B: 135, A: 255} // #7de387 - bright green
-	ColorError    = color.RGBA{R: 247, G: 82, B: 74, A: 255}   // #f7524a - red
-	ColorPending  = color.RGBA{R: 255, G: 166, B: 87, A: 255}  // #ffa657 - orange
+	// Syntax colors - softer, Numi-inspired
+	ColorNumber   = color.RGBA{R: 180, G: 150, B: 220, A: 255} // Soft purple
+	ColorOperator = color.RGBA{R: 160, G: 180, B: 210, A: 255} // Muted blue
+	ColorPercent  = color.RGBA{R: 220, G: 180, B: 140, A: 255} // Warm orange
+	ColorCurrency = color.RGBA{R: 140, G: 200, B: 140, A: 255} // Soft green
+	ColorUnit     = color.RGBA{R: 140, G: 190, B: 210, A: 255} // Soft cyan
+	ColorMetal    = color.RGBA{R: 220, G: 200, B: 120, A: 255} // Gold
+	ColorCrypto   = color.RGBA{R: 240, G: 180, B: 100, A: 255} // Bitcoin orange
+	ColorFunction = color.RGBA{R: 130, G: 180, B: 230, A: 255} // Function blue
+	ColorVariable = color.RGBA{R: 220, G: 140, B: 140, A: 255} // Soft red
+	ColorComment  = color.RGBA{R: 110, G: 110, B: 110, A: 255} // Gray
+	ColorString   = color.RGBA{R: 220, G: 180, B: 140, A: 255} // Warm
+	ColorKeyword  = color.RGBA{R: 220, G: 130, B: 180, A: 255} // Pink
+	ColorResult   = color.RGBA{R: 140, G: 210, B: 150, A: 255} // Soft green
+	ColorError    = color.RGBA{R: 240, G: 100, B: 100, A: 255} // Red
+	ColorPending  = color.RGBA{R: 240, G: 180, B: 100, A: 255} // Orange
 
 	// UI colors
-	ColorLineNumber   = color.RGBA{R: 102, G: 102, B: 102, A: 255} // #666666
-	ColorStatusBar    = color.RGBA{R: 38, G: 38, B: 43, A: 255}    // #26262b
-	ColorCursor       = color.RGBA{R: 255, G: 255, B: 255, A: 255} // #ffffff
-	ColorCursorInsert = color.RGBA{R: 255, G: 255, B: 255, A: 200} // white with alpha
+	ColorTilde       = color.RGBA{R: 70, G: 70, B: 80, A: 255} // Vim tilde color
+	ColorStatusBar   = color.RGBA{R: 40, G: 40, B: 48, A: 240} // Slightly lighter, semi-transparent
+	ColorStatusText  = color.RGBA{R: 150, G: 150, B: 150, A: 255}
+	ColorCursor      = color.RGBA{R: 255, G: 255, B: 255, A: 255}
+	ColorCursorBlock = color.RGBA{R: 255, G: 255, B: 255, A: 160}
 
 	// Mode colors
-	ColorModeNormal = color.RGBA{R: 102, G: 153, B: 230, A: 255} // #6699e6 - blue
-	ColorModeInsert = color.RGBA{R: 102, G: 204, B: 102, A: 255} // #66cc66 - green
-	ColorModeVisual = color.RGBA{R: 204, G: 153, B: 51, A: 255}  // #cc9933 - yellow
+	ColorModeNormal = color.RGBA{R: 100, G: 150, B: 220, A: 255} // Blue
+	ColorModeInsert = color.RGBA{R: 100, G: 190, B: 100, A: 255} // Green
+	ColorModeVisual = color.RGBA{R: 220, G: 170, B: 80, A: 255}  // Yellow/Orange
+
+	// Popup colors
+	ColorPopupBackground = color.RGBA{R: 35, G: 35, B: 42, A: 250}
+	ColorPopupBorder     = color.RGBA{R: 80, G: 120, B: 160, A: 255}
+	ColorPopupTitle      = color.RGBA{R: 130, G: 190, B: 240, A: 255}
+	ColorPopupHeading    = color.RGBA{R: 220, G: 170, B: 100, A: 255}
+	ColorPopupKey        = color.RGBA{R: 180, G: 150, B: 220, A: 255}
+	ColorPopupDesc       = color.RGBA{R: 180, G: 180, B: 180, A: 255}
+	ColorPopupHint       = color.RGBA{R: 120, G: 120, B: 120, A: 255}
 )
 
 // ════════════════════════════════════════════════════════════════
@@ -136,9 +152,9 @@ func StyleColor(style string) color.Color {
 	case "pending":
 		return ColorPending
 	case "lineNumber":
-		return ColorLineNumber
+		return ColorMuted
 	case "selection":
-		return ColorForeground // Selection uses background highlight
+		return ColorForeground
 	default:
 		return ColorForeground
 	}
@@ -153,5 +169,17 @@ func ModeColor(mode string) color.Color {
 		return ColorModeVisual
 	default:
 		return ColorModeNormal
+	}
+}
+
+// ModeName returns a short mode name for status bar.
+func ModeName(mode string) string {
+	switch mode {
+	case "INSERT":
+		return "INSERT"
+	case "VISUAL":
+		return "VISUAL"
+	default:
+		return "NORMAL"
 	}
 }
