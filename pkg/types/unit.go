@@ -1,4 +1,4 @@
-// internal/types/unit.go
+// pkg/types/unit.go
 
 package types
 
@@ -17,7 +17,9 @@ const (
 	UnitTypeData
 	UnitTypeArea
 	UnitTypeVolume
-	UnitTypeSpeed // Future: compound units
+	UnitTypeSpeed
+	UnitTypeFrequency
+	UnitTypeDataRate
 )
 
 // String returns the unit type name.
@@ -39,6 +41,10 @@ func (t UnitType) String() string {
 		return "volume"
 	case UnitTypeSpeed:
 		return "speed"
+	case UnitTypeFrequency:
+		return "frequency"
+	case UnitTypeDataRate:
+		return "data rate"
 	default:
 		return "unknown"
 	}
@@ -359,6 +365,24 @@ var curatedUnits = []Unit{
 		ToBase:  0.001,
 	},
 	{
+		Code:    "us",
+		Symbol:  "μs",
+		Name:    "microsecond",
+		Plural:  "microseconds",
+		Type:    UnitTypeTime,
+		Aliases: []string{"microsecond", "microseconds", "μs"},
+		ToBase:  0.000001,
+	},
+	{
+		Code:    "ns",
+		Symbol:  "ns",
+		Name:    "nanosecond",
+		Plural:  "nanoseconds",
+		Type:    UnitTypeTime,
+		Aliases: []string{"nanosecond", "nanoseconds"},
+		ToBase:  0.000000001,
+	},
+	{
 		Code:    "min",
 		Symbol:  "min",
 		Name:    "minute",
@@ -504,6 +528,15 @@ var curatedUnits = []Unit{
 		ToBase:  1125899906842624.0, // 1024^5
 	},
 	{
+		Code:    "EB",
+		Symbol:  "EB",
+		Name:    "exabyte",
+		Plural:  "exabytes",
+		Type:    UnitTypeData,
+		Aliases: []string{"exabyte", "exabytes", "eb"},
+		ToBase:  1152921504606846976.0, // 1024^6
+	},
+	{
 		Code:    "bit",
 		Symbol:  "bit",
 		Name:    "bit",
@@ -538,6 +571,15 @@ var curatedUnits = []Unit{
 		Type:    UnitTypeData,
 		Aliases: []string{"gigabit", "gigabits", "gbit"},
 		ToBase:  134217728.0, // 1024^3 bits
+	},
+	{
+		Code:    "Tbit",
+		Symbol:  "Tbit",
+		Name:    "terabit",
+		Plural:  "terabits",
+		Type:    UnitTypeData,
+		Aliases: []string{"terabit", "terabits", "tbit"},
+		ToBase:  137438953472.0, // 1024^4 bits
 	},
 
 	// ════════════════════════════════════════════════════════════
@@ -581,6 +623,42 @@ var curatedUnits = []Unit{
 		ToBase:  2589988.0,
 	},
 	{
+		Code:    "sqin",
+		Symbol:  "in²",
+		Name:    "square inch",
+		Plural:  "square inches",
+		Type:    UnitTypeArea,
+		Aliases: []string{"square inch", "square inches", "sq in", "in2"},
+		ToBase:  0.00064516,
+	},
+	{
+		Code:    "sqyd",
+		Symbol:  "yd²",
+		Name:    "square yard",
+		Plural:  "square yards",
+		Type:    UnitTypeArea,
+		Aliases: []string{"square yard", "square yards", "sq yd", "yd2"},
+		ToBase:  0.836127,
+	},
+	{
+		Code:    "sqcm",
+		Symbol:  "cm²",
+		Name:    "square centimeter",
+		Plural:  "square centimeters",
+		Type:    UnitTypeArea,
+		Aliases: []string{"square centimeter", "square centimeters", "sq cm", "cm2"},
+		ToBase:  0.0001,
+	},
+	{
+		Code:    "sqmm",
+		Symbol:  "mm²",
+		Name:    "square millimeter",
+		Plural:  "square millimeters",
+		Type:    UnitTypeArea,
+		Aliases: []string{"square millimeter", "square millimeters", "sq mm", "mm2"},
+		ToBase:  0.000001,
+	},
+	{
 		Code:    "acre",
 		Symbol:  "acre",
 		Name:    "acre",
@@ -622,6 +700,15 @@ var curatedUnits = []Unit{
 		ToBase:  0.001,
 	},
 	{
+		Code:    "kL",
+		Symbol:  "kL",
+		Name:    "kiloliter",
+		Plural:  "kiloliters",
+		Type:    UnitTypeVolume,
+		Aliases: []string{"kiloliter", "kiloliters", "kilolitre", "kilolitres", "kl"},
+		ToBase:  1000.0,
+	},
+	{
 		Code:    "gal",
 		Symbol:  "gal",
 		Name:    "gallon",
@@ -629,6 +716,15 @@ var curatedUnits = []Unit{
 		Type:    UnitTypeVolume,
 		Aliases: []string{"gallon", "gallons"},
 		ToBase:  3.78541, // US gallon
+	},
+	{
+		Code:    "impgal",
+		Symbol:  "imp gal",
+		Name:    "imperial gallon",
+		Plural:  "imperial gallons",
+		Type:    UnitTypeVolume,
+		Aliases: []string{"imperial gallon", "imperial gallons", "uk gallon", "uk gallons"},
+		ToBase:  4.54609,
 	},
 	{
 		Code:    "qt",
@@ -692,6 +788,264 @@ var curatedUnits = []Unit{
 		Type:    UnitTypeVolume,
 		Aliases: []string{"cubic meter", "cubic meters", "cubic metre", "cubic metres"},
 		ToBase:  1000.0,
+	},
+	{
+		Code:    "cm3",
+		Symbol:  "cm³",
+		Name:    "cubic centimeter",
+		Plural:  "cubic centimeters",
+		Type:    UnitTypeVolume,
+		Aliases: []string{"cubic centimeter", "cubic centimeters", "cc"},
+		ToBase:  0.001,
+	},
+	{
+		Code:    "ft3",
+		Symbol:  "ft³",
+		Name:    "cubic foot",
+		Plural:  "cubic feet",
+		Type:    UnitTypeVolume,
+		Aliases: []string{"cubic foot", "cubic feet", "cu ft"},
+		ToBase:  28.3168,
+	},
+	{
+		Code:    "in3",
+		Symbol:  "in³",
+		Name:    "cubic inch",
+		Plural:  "cubic inches",
+		Type:    UnitTypeVolume,
+		Aliases: []string{"cubic inch", "cubic inches", "cu in"},
+		ToBase:  0.0163871,
+	},
+
+	// ════════════════════════════════════════════════════════════
+	// SPEED (base: meters per second)
+	// ════════════════════════════════════════════════════════════
+	{
+		Code:    "mps",
+		Symbol:  "m/s",
+		Name:    "meters per second",
+		Plural:  "meters per second",
+		Type:    UnitTypeSpeed,
+		Aliases: []string{"m/s", "meter per second", "meters per second", "metre per second", "metres per second"},
+		ToBase:  1.0,
+		IsBase:  true,
+	},
+	{
+		Code:    "kmh",
+		Symbol:  "km/h",
+		Name:    "kilometers per hour",
+		Plural:  "kilometers per hour",
+		Type:    UnitTypeSpeed,
+		Aliases: []string{"km/h", "kmph", "kph", "kilometer per hour", "kilometers per hour"},
+		ToBase:  0.277778, // 1 km/h = 1000m / 3600s
+	},
+	{
+		Code:    "mph",
+		Symbol:  "mph",
+		Name:    "miles per hour",
+		Plural:  "miles per hour",
+		Type:    UnitTypeSpeed,
+		Aliases: []string{"mile per hour", "miles per hour"},
+		ToBase:  0.44704, // 1 mph = 1609.344m / 3600s
+	},
+	{
+		Code:    "fps",
+		Symbol:  "ft/s",
+		Name:    "feet per second",
+		Plural:  "feet per second",
+		Type:    UnitTypeSpeed,
+		Aliases: []string{"ft/s", "foot per second", "feet per second"},
+		ToBase:  0.3048,
+	},
+	{
+		Code:    "knot",
+		Symbol:  "kn",
+		Name:    "knot",
+		Plural:  "knots",
+		Type:    UnitTypeSpeed,
+		Aliases: []string{"knots", "kn", "kt", "kts", "nautical mile per hour"},
+		ToBase:  0.514444, // 1 knot = 1852m / 3600s
+	},
+	{
+		Code:    "mach",
+		Symbol:  "Mach",
+		Name:    "Mach",
+		Plural:  "Mach",
+		Type:    UnitTypeSpeed,
+		Aliases: []string{"mach number"},
+		ToBase:  343.0, // Speed of sound at sea level (m/s)
+	},
+	{
+		Code:    "c",
+		Symbol:  "c",
+		Name:    "speed of light",
+		Plural:  "speed of light",
+		Type:    UnitTypeSpeed,
+		Aliases: []string{"lightspeed", "light speed"},
+		ToBase:  299792458.0,
+	},
+
+	// ════════════════════════════════════════════════════════════
+	// FREQUENCY (base: Hertz)
+	// ════════════════════════════════════════════════════════════
+	{
+		Code:    "Hz",
+		Symbol:  "Hz",
+		Name:    "Hertz",
+		Plural:  "Hertz",
+		Type:    UnitTypeFrequency,
+		Aliases: []string{"hertz", "hz"},
+		ToBase:  1.0,
+		IsBase:  true,
+	},
+	{
+		Code:    "kHz",
+		Symbol:  "kHz",
+		Name:    "kilohertz",
+		Plural:  "kilohertz",
+		Type:    UnitTypeFrequency,
+		Aliases: []string{"kilohertz", "khz"},
+		ToBase:  1000.0,
+	},
+	{
+		Code:    "MHz",
+		Symbol:  "MHz",
+		Name:    "megahertz",
+		Plural:  "megahertz",
+		Type:    UnitTypeFrequency,
+		Aliases: []string{"megahertz", "mhz"},
+		ToBase:  1000000.0,
+	},
+	{
+		Code:    "GHz",
+		Symbol:  "GHz",
+		Name:    "gigahertz",
+		Plural:  "gigahertz",
+		Type:    UnitTypeFrequency,
+		Aliases: []string{"gigahertz", "ghz"},
+		ToBase:  1000000000.0,
+	},
+	{
+		Code:    "THz",
+		Symbol:  "THz",
+		Name:    "terahertz",
+		Plural:  "terahertz",
+		Type:    UnitTypeFrequency,
+		Aliases: []string{"terahertz", "thz"},
+		ToBase:  1000000000000.0,
+	},
+	{
+		Code:    "rpm",
+		Symbol:  "rpm",
+		Name:    "revolutions per minute",
+		Plural:  "revolutions per minute",
+		Type:    UnitTypeFrequency,
+		Aliases: []string{"revolutions per minute", "rev/min"},
+		ToBase:  0.0166667, // 1 rpm = 1/60 Hz
+	},
+	{
+		Code:    "rps",
+		Symbol:  "rps",
+		Name:    "revolutions per second",
+		Plural:  "revolutions per second",
+		Type:    UnitTypeFrequency,
+		Aliases: []string{"revolutions per second", "rev/s"},
+		ToBase:  1.0, // 1 rps = 1 Hz
+	},
+
+	// ════════════════════════════════════════════════════════════
+	// DATA RATE (base: bytes per second)
+	// ════════════════════════════════════════════════════════════
+	{
+		Code:    "Bps",
+		Symbol:  "B/s",
+		Name:    "bytes per second",
+		Plural:  "bytes per second",
+		Type:    UnitTypeDataRate,
+		Aliases: []string{"B/s", "byte per second", "bytes per second"},
+		ToBase:  1.0,
+		IsBase:  true,
+	},
+	{
+		Code:    "KBps",
+		Symbol:  "KB/s",
+		Name:    "kilobytes per second",
+		Plural:  "kilobytes per second",
+		Type:    UnitTypeDataRate,
+		Aliases: []string{"KB/s", "kilobyte per second", "kilobytes per second"},
+		ToBase:  1024.0,
+	},
+	{
+		Code:    "MBps",
+		Symbol:  "MB/s",
+		Name:    "megabytes per second",
+		Plural:  "megabytes per second",
+		Type:    UnitTypeDataRate,
+		Aliases: []string{"MB/s", "megabyte per second", "megabytes per second"},
+		ToBase:  1048576.0, // 1024^2
+	},
+	{
+		Code:    "GBps",
+		Symbol:  "GB/s",
+		Name:    "gigabytes per second",
+		Plural:  "gigabytes per second",
+		Type:    UnitTypeDataRate,
+		Aliases: []string{"GB/s", "gigabyte per second", "gigabytes per second"},
+		ToBase:  1073741824.0, // 1024^3
+	},
+	{
+		Code:    "TBps",
+		Symbol:  "TB/s",
+		Name:    "terabytes per second",
+		Plural:  "terabytes per second",
+		Type:    UnitTypeDataRate,
+		Aliases: []string{"TB/s", "terabyte per second", "terabytes per second"},
+		ToBase:  1099511627776.0, // 1024^4
+	},
+	{
+		Code:    "bps",
+		Symbol:  "bps",
+		Name:    "bits per second",
+		Plural:  "bits per second",
+		Type:    UnitTypeDataRate,
+		Aliases: []string{"bit per second", "bits per second"},
+		ToBase:  0.125, // 1 bit = 1/8 byte
+	},
+	{
+		Code:    "Kbps",
+		Symbol:  "Kbps",
+		Name:    "kilobits per second",
+		Plural:  "kilobits per second",
+		Type:    UnitTypeDataRate,
+		Aliases: []string{"kilobit per second", "kilobits per second"},
+		ToBase:  128.0, // 1024 bits = 128 bytes
+	},
+	{
+		Code:    "Mbps",
+		Symbol:  "Mbps",
+		Name:    "megabits per second",
+		Plural:  "megabits per second",
+		Type:    UnitTypeDataRate,
+		Aliases: []string{"megabit per second", "megabits per second"},
+		ToBase:  131072.0, // 1024^2 bits / 8
+	},
+	{
+		Code:    "Gbps",
+		Symbol:  "Gbps",
+		Name:    "gigabits per second",
+		Plural:  "gigabits per second",
+		Type:    UnitTypeDataRate,
+		Aliases: []string{"gigabit per second", "gigabits per second"},
+		ToBase:  134217728.0, // 1024^3 bits / 8
+	},
+	{
+		Code:    "Tbps",
+		Symbol:  "Tbps",
+		Name:    "terabits per second",
+		Plural:  "terabits per second",
+		Type:    UnitTypeDataRate,
+		Aliases: []string{"terabit per second", "terabits per second"},
+		ToBase:  137438953472.0, // 1024^4 bits / 8
 	},
 }
 
