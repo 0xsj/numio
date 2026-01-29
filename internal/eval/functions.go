@@ -47,6 +47,7 @@ func init() {
 	registerStringFunctions()
 	registerSequenceFunctions()
 	registerPhysicsConstantFunctions()
+	registerPhysicsFunctions() // NEW: Register all physics functions
 
 	// Build function names list for fuzzy matching
 	buildFunctionNamesList()
@@ -1009,7 +1010,7 @@ func registerSequenceFunctions() {
 }
 
 // ════════════════════════════════════════════════════════════════
-// PHYSICS CONSTANT FUNCTION REGISTRATION
+// PHYSICS CONSTANT FUNCTION REGISTRATION (LEGACY)
 // ════════════════════════════════════════════════════════════════
 
 func registerPhysicsConstantFunctions() {
@@ -1020,12 +1021,8 @@ func registerPhysicsConstantFunctions() {
 
 	// Derived constants
 	register("impedanceoffreespace", 0, 0, false, FnImpedanceOfFreeSpace)
-	register("comptonwavelength", 0, 0, false, FnComptonWavelength)
 	register("magneticfluxquantum", 0, 0, false, FnMagneticFluxQuantum)
 	register("conductancequantum", 0, 0, false, FnConductanceQuantum)
-	register("bohrmagneton", 0, 0, false, FnBohrMagneton)
-	register("nuclearmagneton", 0, 0, false, FnNuclearMagneton)
-	register("classicalelectronradius", 0, 0, false, FnClassicalElectronRadius)
 	register("thomsoncrosssection", 0, 0, false, FnThomsonCrossSection)
 
 	// Unit conversions
@@ -1041,4 +1038,58 @@ func registerPhysicsConstantFunctions() {
 	register("mtopc", 1, 1, false, FnMToPc)
 	register("autom", 1, 1, false, FnAuToM)
 	register("mtoau", 1, 1, false, FnMToAu)
+}
+
+// ════════════════════════════════════════════════════════════════
+// PHYSICS FUNCTION REGISTRATION (NEW)
+// ════════════════════════════════════════════════════════════════
+
+func registerPhysicsFunctions() {
+	// Register all physics functions from the registry
+	for name, info := range PhysicsFunctionRegistry {
+		// Determine min/max args from the Args string
+		minArgs, maxArgs, variadic := parsePhysicsArgs(info.Args)
+		register(name, minArgs, maxArgs, variadic, info.Fn)
+	}
+}
+
+// parsePhysicsArgs parses the Args string to determine argument counts.
+// This is a simple heuristic based on the argument description.
+func parsePhysicsArgs(args string) (minArgs, maxArgs int, variadic bool) {
+	if args == "" {
+		return 0, 0, false
+	}
+
+	// Count required args (no brackets) and optional args (with brackets)
+	required := 0
+	optional := 0
+	inBracket := false
+
+	for _, part := range strings.Split(args, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+
+		if strings.HasPrefix(part, "[") {
+			inBracket = true
+		}
+
+		if inBracket || strings.Contains(part, "[") {
+			optional++
+		} else {
+			required++
+		}
+
+		if strings.HasSuffix(part, "]") {
+			inBracket = false
+		}
+	}
+
+	// Handle variadic (indicated by "...")
+	if strings.Contains(args, "...") {
+		return required, -1, true
+	}
+
+	return required, required + optional, false
 }
