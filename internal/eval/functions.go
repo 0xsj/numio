@@ -38,7 +38,7 @@ func init() {
 	registerStatsFunctions()
 	registerFinanceFunctions()
 	registerDateFunctions()
-	buildFunctionNamesList()
+	registerCalculusFunctions()
 
 	// Build function names list for fuzzy matching
 	buildFunctionNamesList()
