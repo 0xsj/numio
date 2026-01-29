@@ -42,6 +42,11 @@ func init() {
 	registerBitwiseFunctions()
 	registerBaseFunctions()
 	registerColorFunctions()
+	registerNetworkFunctions()
+	registerProbabilityFunctions()
+	registerStringFunctions()
+	registerSequenceFunctions()
+	registerPhysicsConstantFunctions()
 
 	// Build function names list for fuzzy matching
 	buildFunctionNamesList()
@@ -174,6 +179,11 @@ func IsReservedFunctionName(name string) bool {
 
 	// Check math constants
 	if _, ok := GetMathConstant(lower); ok {
+		return true
+	}
+
+	// Check physics constants
+	if IsPhysicsConstant(lower) {
 		return true
 	}
 
@@ -761,4 +771,274 @@ func registerColorFunctions() {
 	register("tetradic", 1, 1, false, FnTetradic)
 	register("splitcomplement", 1, 1, false, FnSplitComplement)
 	register("analogous", 1, 1, false, FnAnalogous)
+}
+
+// ════════════════════════════════════════════════════════════════
+// NETWORK FUNCTION REGISTRATION
+// ════════════════════════════════════════════════════════════════
+
+func registerNetworkFunctions() {
+	// IP parsing & conversion
+	register("ip", 1, 1, false, FnIP)
+	register("toip", 1, 1, false, FnToIP)
+	register("parseip", 1, 1, false, FnParseIP)
+	register("ipversion", 1, 1, false, FnIPVersion)
+
+	// IP classification
+	register("isprivate", 1, 1, false, FnIsPrivate)
+	register("ispublic", 1, 1, false, FnIsPublic)
+	register("isloopback", 1, 1, false, FnIsLoopback)
+	register("ismulticast", 1, 1, false, FnIsMulticast)
+	register("islinklocal", 1, 1, false, FnIsLinkLocal)
+	register("ipclass", 1, 1, false, FnIPClass)
+
+	// Subnet & CIDR
+	register("subnet", 1, 1, false, FnSubnet)
+	register("hosts", 1, 1, false, FnHosts)
+	register("netmask", 1, 1, false, FnNetmask)
+	register("cidr", 2, 2, false, FnCIDR)
+	register("network", 1, 1, false, FnNetwork)
+	register("broadcast", 1, 1, false, FnBroadcast)
+	register("firsthost", 1, 1, false, FnFirstHost)
+	register("lasthost", 1, 1, false, FnLastHost)
+	register("wildcard", 1, 1, false, FnWildcard)
+
+	// IP math & range
+	register("ipadd", 2, 2, false, FnIPAdd)
+	register("ipsub", 2, 2, false, FnIPSub)
+	register("ipinrange", 2, 2, false, FnIPInRange)
+	register("iprange", 2, 2, false, FnIPRange)
+
+	// IP components
+	register("octet", 2, 2, false, FnOctet)
+	register("ipbinary", 1, 1, false, FnIPBinary)
+
+	// Calculations
+	register("subnets", 2, 2, false, FnSubnets)
+	register("prefixfromhosts", 1, 1, false, FnPrefixFromHosts)
+	register("samesubnet", 3, 3, false, FnSameSubnet)
+}
+
+// ════════════════════════════════════════════════════════════════
+// PROBABILITY FUNCTION REGISTRATION
+// ════════════════════════════════════════════════════════════════
+
+func registerProbabilityFunctions() {
+	// Binomial distribution
+	register("binomialpdf", 3, 3, false, FnBinomialPDF)
+	register("binomialcdf", 3, 3, false, FnBinomialCDF)
+	register("binomialmean", 2, 2, false, FnBinomialMean)
+	register("binomialvar", 2, 2, false, FnBinomialVar)
+
+	// Poisson distribution
+	register("poissonpdf", 2, 2, false, FnPoissonPDF)
+	register("poissoncdf", 2, 2, false, FnPoissonCDF)
+	register("poissonmean", 1, 1, false, FnPoissonMean)
+	register("poissonvar", 1, 1, false, FnPoissonVar)
+
+	// Normal distribution
+	register("normalpdf", 1, 3, false, FnNormalPDF)
+	register("normalcdf", 1, 3, false, FnNormalCDF)
+	register("norminv", 1, 3, false, FnNormalInv)
+	register("zscoreval", 3, 3, false, FnZScoreCalc)
+	register("zvalue", 3, 3, false, FnZScoreToValue)
+
+	// Exponential distribution
+	register("exppdf", 2, 2, false, FnExponentialPDF)
+	register("expcdf", 2, 2, false, FnExponentialCDF)
+	register("expinv", 2, 2, false, FnExponentialInv)
+
+	// Uniform distribution
+	register("uniformpdf", 3, 3, false, FnUniformPDF)
+	register("uniformcdf", 3, 3, false, FnUniformCDF)
+
+	// Confidence intervals
+	register("confidence", 3, 3, false, FnConfidence)
+	register("confint", 4, 4, false, FnConfidenceInterval)
+	register("marginoferror", 3, 3, false, FnMarginOfError)
+	register("samplesize", 3, 3, false, FnSampleSize)
+
+	// Simulation & random
+	register("dice", 0, 2, false, FnDice)
+	register("coin", 0, 1, false, FnCoin)
+	register("bernoulli", 1, 1, false, FnBernoulli)
+	register("randnormal", 0, 2, false, FnRandNormal)
+	register("randuniform", 0, 2, false, FnRandUniform)
+	register("randint", 2, 2, false, FnRandInt)
+	register("randexp", 1, 1, false, FnRandExp)
+	register("randbinomial", 2, 2, false, FnRandBinomial)
+	register("randpoisson", 1, 1, false, FnRandPoisson)
+
+	// Probability utilities
+	register("odds", 1, 1, false, FnOdds)
+	register("oddstoprob", 1, 1, false, FnOddsToProb)
+	register("expected", 2, -1, true, FnExpectedValue)
+}
+
+// ════════════════════════════════════════════════════════════════
+// STRING FUNCTION REGISTRATION
+// ════════════════════════════════════════════════════════════════
+
+func registerStringFunctions() {
+	// Base64 encoding
+	register("base64", 1, 1, false, FnBase64Encode)
+	register("base64decode", 1, 1, false, FnBase64Decode)
+	register("base64url", 1, 1, false, FnBase64URLEncode)
+	register("base64urldecode", 1, 1, false, FnBase64URLDecode)
+
+	// Hashing
+	register("md5", 1, 1, false, FnMD5)
+	register("sha1", 1, 1, false, FnSHA1)
+	register("sha256", 1, 1, false, FnSHA256)
+	register("sha512", 1, 1, false, FnSHA512)
+	register("hash", 2, 2, false, FnHash)
+
+	// URL encoding
+	register("urlencode", 1, 1, false, FnURLEncode)
+	register("urldecode", 1, 1, false, FnURLDecode)
+	register("urlpathencode", 1, 1, false, FnURLPathEncode)
+	register("urlpathdecode", 1, 1, false, FnURLPathDecode)
+
+	// Hex encoding
+	register("hexencode", 1, 1, false, FnHexEncode)
+	register("hexdecode", 1, 1, false, FnHexDecode)
+
+	// UUID
+	register("uuid", 0, 0, false, FnUUID)
+	register("uuidv4", 0, 0, false, FnUUIDv4)
+
+	// String manipulation
+	register("strlen", 1, 1, false, FnStrLen)
+	register("strbytelen", 1, 1, false, FnByteLen)
+	register("upper", 1, 1, false, FnUpper)
+	register("lower", 1, 1, false, FnLower)
+	register("title", 1, 1, false, FnTitle)
+	register("trim", 1, 1, false, FnTrim)
+	register("trimleft", 1, 1, false, FnTrimLeft)
+	register("trimright", 1, 1, false, FnTrimRight)
+	register("reverse", 1, 1, false, FnReverse)
+	register("repeat", 2, 2, false, FnRepeat)
+	register("replace", 3, 4, false, FnReplace)
+	register("substr", 2, 3, false, FnSubstr)
+	register("contains", 2, 2, false, FnContains)
+	register("startswith", 2, 2, false, FnStartsWith)
+	register("endswith", 2, 2, false, FnEndsWith)
+	register("indexof", 2, 2, false, FnIndexOf)
+	register("lastindexof", 2, 2, false, FnLastIndexOf)
+	register("countstr", 2, 2, false, FnCountStr)
+	register("split", 2, 2, false, FnSplit)
+	register("join", 2, -1, true, FnJoin)
+	register("padleft", 2, 3, false, FnPadLeft)
+	register("padright", 2, 3, false, FnPadRight)
+	register("padcenter", 2, 3, false, FnPadCenter)
+
+	// String analysis
+	register("wordcount", 1, 1, false, FnWordCount)
+	register("linecount", 1, 1, false, FnLineCount)
+	register("isalpha", 1, 1, false, FnIsAlpha)
+	register("isnumeric", 1, 1, false, FnIsNumeric)
+	register("isalphanum", 1, 1, false, FnIsAlphaNum)
+	register("iswhitespace", 1, 1, false, FnIsWhitespace)
+	register("isupper", 1, 1, false, FnIsUpper)
+	register("islower", 1, 1, false, FnIsLower)
+
+	// Case conversion
+	register("slug", 1, 1, false, FnSlug)
+	register("camelcase", 1, 1, false, FnCamelCase)
+	register("pascalcase", 1, 1, false, FnPascalCase)
+	register("snakecase", 1, 1, false, FnSnakeCase)
+	register("kebabcase", 1, 1, false, FnKebabCase)
+	register("constantcase", 1, 1, false, FnConstantCase)
+}
+
+// ════════════════════════════════════════════════════════════════
+// SEQUENCE FUNCTION REGISTRATION
+// ════════════════════════════════════════════════════════════════
+
+func registerSequenceFunctions() {
+	// Fibonacci
+	register("fib", 1, 1, false, FnFib)
+	register("fibseq", 1, 2, false, FnFibSeq)
+	register("isfib", 1, 1, false, FnIsFib)
+	register("fibindex", 1, 1, false, FnFibIndex)
+
+	// Primes
+	register("prime", 1, 1, false, FnPrime)
+	register("isprime", 1, 1, false, FnIsPrime)
+	register("nextprime", 1, 1, false, FnNextPrime)
+	register("prevprime", 1, 1, false, FnPrevPrime)
+	register("primeseq", 1, 2, false, FnPrimeSeq)
+	register("primesbelow", 1, 1, false, FnPrimesBelow)
+	register("primecount", 1, 1, false, FnPrimeCount)
+	register("primepi", 1, 1, false, FnPrimePi)
+
+	// Factorization
+	register("factors", 1, 1, false, FnFactors)
+	register("factorization", 1, 1, false, FnFactorization)
+	register("divisors", 1, 1, false, FnDivisors)
+	register("divisorcount", 1, 1, false, FnDivisorCount)
+	register("divisorsum", 1, 1, false, FnDivisorSum)
+	register("properdivisorsum", 1, 1, false, FnProperDivisorSum)
+
+	// Number classifications
+	register("isperfect", 1, 1, false, FnIsPerfect)
+	register("isabundant", 1, 1, false, FnIsAbundant)
+	register("isdeficient", 1, 1, false, FnIsDeficient)
+	register("issquare", 1, 1, false, FnIsSquare)
+	register("iscube", 1, 1, false, FnIsCube)
+	register("ispowerof", 2, 2, false, FnIsPowerOf)
+
+	// Polygonal numbers
+	register("triangular", 1, 1, false, FnTriangular)
+	register("istriangular", 1, 1, false, FnIsTriangular)
+	register("squarenum", 1, 1, false, FnSquareNum)
+	register("cubenum", 1, 1, false, FnCubeNum)
+	register("pentagonal", 1, 1, false, FnPentagonal)
+	register("hexagonal", 1, 1, false, FnHexagonal)
+
+	// Other sequences
+	register("catalan", 1, 1, false, FnCatalan)
+	register("lucas", 1, 1, false, FnLucas)
+	register("collatz", 1, 1, false, FnCollatz)
+	register("collatzlen", 1, 1, false, FnCollatzLen)
+
+	// Number theory
+	register("totient", 1, 1, false, FnTotient)
+	register("mobius", 1, 1, false, FnMobius)
+	register("radical", 1, 1, false, FnRadical)
+}
+
+// ════════════════════════════════════════════════════════════════
+// PHYSICS CONSTANT FUNCTION REGISTRATION
+// ════════════════════════════════════════════════════════════════
+
+func registerPhysicsConstantFunctions() {
+	// Constant lookup
+	register("physconst", 1, 1, false, FnPhysConst)
+	register("physconstinfo", 1, 1, false, FnPhysConstInfo)
+	register("listphysconsts", 0, 0, false, FnListPhysConsts)
+
+	// Derived constants
+	register("impedanceoffreespace", 0, 0, false, FnImpedanceOfFreeSpace)
+	register("comptonwavelength", 0, 0, false, FnComptonWavelength)
+	register("magneticfluxquantum", 0, 0, false, FnMagneticFluxQuantum)
+	register("conductancequantum", 0, 0, false, FnConductanceQuantum)
+	register("bohrmagneton", 0, 0, false, FnBohrMagneton)
+	register("nuclearmagneton", 0, 0, false, FnNuclearMagneton)
+	register("classicalelectronradius", 0, 0, false, FnClassicalElectronRadius)
+	register("thomsoncrosssection", 0, 0, false, FnThomsonCrossSection)
+
+	// Unit conversions
+	register("evtojoules", 1, 1, false, FnEvToJoules)
+	register("joulestoev", 1, 1, false, FnJoulesToEv)
+	register("evtokelvin", 1, 1, false, FnEvToKelvin)
+	register("kelvintoev", 1, 1, false, FnKelvinToEv)
+	register("amutokg", 1, 1, false, FnAmuToKg)
+	register("kgtoamu", 1, 1, false, FnKgToAmu)
+	register("lytom", 1, 1, false, FnLyToM)
+	register("mtoly", 1, 1, false, FnMToLy)
+	register("pctom", 1, 1, false, FnPcToM)
+	register("mtopc", 1, 1, false, FnMToPc)
+	register("autom", 1, 1, false, FnAuToM)
+	register("mtoau", 1, 1, false, FnMToAu)
 }
