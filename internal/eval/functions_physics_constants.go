@@ -3,7 +3,10 @@
 package eval
 
 import (
+	"fmt"
 	"math"
+	"sort"
+	"strings"
 
 	"github.com/0xsj/numio/pkg/types"
 )
@@ -151,6 +154,25 @@ var physicsConstants = map[string]PhysicsConstant{
 		Description: "Atomic mass unit",
 		Symbol:      "u",
 	},
+	// Astronomical constants
+	"ly": {
+		Value:       9.4607304725808e15,
+		Unit:        "m",
+		Description: "Light year",
+		Symbol:      "ly",
+	},
+	"pc": {
+		Value:       3.0856775814913673e16,
+		Unit:        "m",
+		Description: "Parsec",
+		Symbol:      "pc",
+	},
+	"au": {
+		Value:       1.495978707e11,
+		Unit:        "m",
+		Description: "Astronomical unit",
+		Symbol:      "AU",
+	},
 }
 
 // GetPhysicsConstant retrieves a physics constant by key.
@@ -159,183 +181,169 @@ func GetPhysicsConstant(key string) (PhysicsConstant, bool) {
 	return c, ok
 }
 
+// IsPhysicsConstant checks if a name is a physics constant.
+func IsPhysicsConstant(name string) bool {
+	_, ok := physicsConstants[strings.ToLower(name)]
+	return ok
+}
+
+// ════════════════════════════════════════════════════════════════
+// CONSTANT LOOKUP FUNCTIONS
+// ════════════════════════════════════════════════════════════════
+
+// FnPhysConst looks up a physics constant by name.
+func FnPhysConst(args []types.Value) types.Value {
+	name := strings.ToLower(args[0].AsString())
+
+	c, ok := physicsConstants[name]
+	if !ok {
+		return types.Errorf("unknown physics constant: %s", name)
+	}
+
+	return types.Number(c.Value)
+}
+
+// FnPhysConstInfo returns info about a physics constant.
+func FnPhysConstInfo(args []types.Value) types.Value {
+	name := strings.ToLower(args[0].AsString())
+
+	c, ok := physicsConstants[name]
+	if !ok {
+		return types.Errorf("unknown physics constant: %s", name)
+	}
+
+	info := fmt.Sprintf("%s (%s) = %g %s - %s", name, c.Symbol, c.Value, c.Unit, c.Description)
+	return types.StringValue(info)
+}
+
+// FnListPhysConsts lists all available physics constants.
+func FnListPhysConsts(args []types.Value) types.Value {
+	names := make([]string, 0, len(physicsConstants))
+	for name := range physicsConstants {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	var sb strings.Builder
+	for _, name := range names {
+		c := physicsConstants[name]
+		sb.WriteString(fmt.Sprintf("%s (%s): %g %s\n", name, c.Symbol, c.Value, c.Unit))
+	}
+
+	return types.StringValue(sb.String())
+}
+
 // ════════════════════════════════════════════════════════════════
 // CONSTANT ACCESSOR FUNCTIONS
 // ════════════════════════════════════════════════════════════════
 
 // FnSpeedOfLight returns the speed of light.
 func FnSpeedOfLight(args []types.Value) types.Value {
-	if len(args) != 0 {
-		return types.Error("c requires no arguments")
-	}
 	return types.Number(physicsConstants["c"].Value)
 }
 
 // FnPlanckConstant returns Planck's constant.
 func FnPlanckConstant(args []types.Value) types.Value {
-	if len(args) != 0 {
-		return types.Error("planck requires no arguments")
-	}
 	return types.Number(physicsConstants["h"].Value)
 }
 
 // FnReducedPlanck returns the reduced Planck constant.
 func FnReducedPlanck(args []types.Value) types.Value {
-	if len(args) != 0 {
-		return types.Error("hbar requires no arguments")
-	}
 	return types.Number(physicsConstants["hbar"].Value)
 }
 
 // FnGravityEarth returns standard gravity on Earth.
 func FnGravityEarth(args []types.Value) types.Value {
-	if len(args) != 0 {
-		return types.Error("g requires no arguments")
-	}
 	return types.Number(physicsConstants["g_earth"].Value)
 }
 
 // FnGravitationalConstant returns the gravitational constant G.
 func FnGravitationalConstant(args []types.Value) types.Value {
-	if len(args) != 0 {
-		return types.Error("G requires no arguments")
-	}
 	return types.Number(physicsConstants["g_gravity"].Value)
 }
 
 // FnElementaryCharge returns the elementary charge.
 func FnElementaryCharge(args []types.Value) types.Value {
-	if len(args) != 0 {
-		return types.Error("e requires no arguments")
-	}
 	return types.Number(physicsConstants["e_charge"].Value)
 }
 
 // FnElectronMass returns the electron mass.
 func FnElectronMass(args []types.Value) types.Value {
-	if len(args) != 0 {
-		return types.Error("me requires no arguments")
-	}
 	return types.Number(physicsConstants["me"].Value)
 }
 
 // FnProtonMass returns the proton mass.
 func FnProtonMass(args []types.Value) types.Value {
-	if len(args) != 0 {
-		return types.Error("mp requires no arguments")
-	}
 	return types.Number(physicsConstants["mp"].Value)
 }
 
 // FnNeutronMass returns the neutron mass.
 func FnNeutronMass(args []types.Value) types.Value {
-	if len(args) != 0 {
-		return types.Error("mn requires no arguments")
-	}
 	return types.Number(physicsConstants["mn"].Value)
 }
 
 // FnBoltzmannConstant returns the Boltzmann constant.
 func FnBoltzmannConstant(args []types.Value) types.Value {
-	if len(args) != 0 {
-		return types.Error("kb requires no arguments")
-	}
 	return types.Number(physicsConstants["kb"].Value)
 }
 
 // FnAvogadroNumber returns Avogadro's number.
 func FnAvogadroNumber(args []types.Value) types.Value {
-	if len(args) != 0 {
-		return types.Error("na requires no arguments")
-	}
 	return types.Number(physicsConstants["na"].Value)
 }
 
 // FnGasConstant returns the ideal gas constant.
 func FnGasConstant(args []types.Value) types.Value {
-	if len(args) != 0 {
-		return types.Error("rgas requires no arguments")
-	}
 	return types.Number(physicsConstants["r_gas"].Value)
 }
 
 // FnVacuumPermittivity returns the vacuum permittivity.
 func FnVacuumPermittivity(args []types.Value) types.Value {
-	if len(args) != 0 {
-		return types.Error("epsilon0 requires no arguments")
-	}
 	return types.Number(physicsConstants["epsilon0"].Value)
 }
 
 // FnVacuumPermeability returns the vacuum permeability.
 func FnVacuumPermeability(args []types.Value) types.Value {
-	if len(args) != 0 {
-		return types.Error("mu0 requires no arguments")
-	}
 	return types.Number(physicsConstants["mu0"].Value)
 }
 
 // FnCoulombConstant returns Coulomb's constant.
 func FnCoulombConstant(args []types.Value) types.Value {
-	if len(args) != 0 {
-		return types.Error("ke requires no arguments")
-	}
 	return types.Number(physicsConstants["ke"].Value)
 }
 
 // FnStefanBoltzmannConst returns the Stefan-Boltzmann constant.
 func FnStefanBoltzmannConst(args []types.Value) types.Value {
-	if len(args) != 0 {
-		return types.Error("stefanboltz requires no arguments")
-	}
 	return types.Number(physicsConstants["sigma_sb"].Value)
 }
 
 // FnWienConstant returns the Wien displacement constant.
 func FnWienConstant(args []types.Value) types.Value {
-	if len(args) != 0 {
-		return types.Error("wien requires no arguments")
-	}
 	return types.Number(physicsConstants["wien"].Value)
 }
 
 // FnRydbergConstant returns the Rydberg constant.
 func FnRydbergConstant(args []types.Value) types.Value {
-	if len(args) != 0 {
-		return types.Error("rydberg requires no arguments")
-	}
 	return types.Number(physicsConstants["r_inf"].Value)
 }
 
 // FnBohrRadiusConst returns the Bohr radius constant.
 func FnBohrRadiusConst(args []types.Value) types.Value {
-	if len(args) != 0 {
-		return types.Error("a0 requires no arguments")
-	}
 	return types.Number(physicsConstants["a0"].Value)
 }
 
 // FnFineStructure returns the fine-structure constant.
 func FnFineStructure(args []types.Value) types.Value {
-	if len(args) != 0 {
-		return types.Error("alpha requires no arguments")
-	}
 	return types.Number(physicsConstants["alpha"].Value)
 }
 
 // FnElectronVolt returns the electron volt in joules.
 func FnElectronVolt(args []types.Value) types.Value {
-	if len(args) != 0 {
-		return types.Error("ev requires no arguments")
-	}
 	return types.Number(physicsConstants["ev"].Value)
 }
 
 // FnAtomicMassUnit returns the atomic mass unit.
 func FnAtomicMassUnit(args []types.Value) types.Value {
-	if len(args) != 0 {
-		return types.Error("amu requires no arguments")
-	}
 	return types.Number(physicsConstants["amu"].Value)
 }
 
@@ -346,9 +354,6 @@ func FnAtomicMassUnit(args []types.Value) types.Value {
 // FnComptonWavelength returns the Compton wavelength of the electron.
 // λ_C = h/(m_e c)
 func FnComptonWavelength(args []types.Value) types.Value {
-	if len(args) != 0 {
-		return types.Error("comptonwavelength requires no arguments")
-	}
 	h := physicsConstants["h"].Value
 	me := physicsConstants["me"].Value
 	c := physicsConstants["c"].Value
@@ -358,9 +363,6 @@ func FnComptonWavelength(args []types.Value) types.Value {
 // FnBohrMagneton returns the Bohr magneton.
 // μ_B = eℏ/(2m_e)
 func FnBohrMagneton(args []types.Value) types.Value {
-	if len(args) != 0 {
-		return types.Error("bohrmagneton requires no arguments")
-	}
 	e := physicsConstants["e_charge"].Value
 	hbar := physicsConstants["hbar"].Value
 	me := physicsConstants["me"].Value
@@ -370,9 +372,6 @@ func FnBohrMagneton(args []types.Value) types.Value {
 // FnNuclearMagneton returns the nuclear magneton.
 // μ_N = eℏ/(2m_p)
 func FnNuclearMagneton(args []types.Value) types.Value {
-	if len(args) != 0 {
-		return types.Error("nuclearmagneton requires no arguments")
-	}
 	e := physicsConstants["e_charge"].Value
 	hbar := physicsConstants["hbar"].Value
 	mp := physicsConstants["mp"].Value
@@ -382,9 +381,6 @@ func FnNuclearMagneton(args []types.Value) types.Value {
 // FnClassicalElectronRadius returns the classical electron radius.
 // r_e = k_e e²/(m_e c²)
 func FnClassicalElectronRadius(args []types.Value) types.Value {
-	if len(args) != 0 {
-		return types.Error("classicalelectronradius requires no arguments")
-	}
 	ke := physicsConstants["ke"].Value
 	e := physicsConstants["e_charge"].Value
 	me := physicsConstants["me"].Value
@@ -395,9 +391,6 @@ func FnClassicalElectronRadius(args []types.Value) types.Value {
 // FnPlanckLength returns the Planck length.
 // l_P = √(ℏG/c³)
 func FnPlanckLength(args []types.Value) types.Value {
-	if len(args) != 0 {
-		return types.Error("plancklength requires no arguments")
-	}
 	hbar := physicsConstants["hbar"].Value
 	G := physicsConstants["g_gravity"].Value
 	c := physicsConstants["c"].Value
@@ -407,9 +400,6 @@ func FnPlanckLength(args []types.Value) types.Value {
 // FnPlanckTime returns the Planck time.
 // t_P = √(ℏG/c⁵)
 func FnPlanckTime(args []types.Value) types.Value {
-	if len(args) != 0 {
-		return types.Error("plancktime requires no arguments")
-	}
 	hbar := physicsConstants["hbar"].Value
 	G := physicsConstants["g_gravity"].Value
 	c := physicsConstants["c"].Value
@@ -419,9 +409,6 @@ func FnPlanckTime(args []types.Value) types.Value {
 // FnPlanckMass returns the Planck mass.
 // m_P = √(ℏc/G)
 func FnPlanckMass(args []types.Value) types.Value {
-	if len(args) != 0 {
-		return types.Error("planckmass requires no arguments")
-	}
 	hbar := physicsConstants["hbar"].Value
 	G := physicsConstants["g_gravity"].Value
 	c := physicsConstants["c"].Value
@@ -431,9 +418,6 @@ func FnPlanckMass(args []types.Value) types.Value {
 // FnPlanckEnergy returns the Planck energy.
 // E_P = √(ℏc⁵/G)
 func FnPlanckEnergy(args []types.Value) types.Value {
-	if len(args) != 0 {
-		return types.Error("planckenergy requires no arguments")
-	}
 	hbar := physicsConstants["hbar"].Value
 	G := physicsConstants["g_gravity"].Value
 	c := physicsConstants["c"].Value
@@ -443,12 +427,127 @@ func FnPlanckEnergy(args []types.Value) types.Value {
 // FnPlanckTemperature returns the Planck temperature.
 // T_P = √(ℏc⁵/(Gk_B²))
 func FnPlanckTemperature(args []types.Value) types.Value {
-	if len(args) != 0 {
-		return types.Error("plancktemperature requires no arguments")
-	}
 	hbar := physicsConstants["hbar"].Value
 	G := physicsConstants["g_gravity"].Value
 	c := physicsConstants["c"].Value
 	kb := physicsConstants["kb"].Value
 	return types.Number(math.Sqrt(hbar * c * c * c * c * c / (G * kb * kb)))
+}
+
+// FnImpedanceOfFreeSpace returns the impedance of free space.
+// Z_0 = μ_0 c ≈ 376.73 Ω
+func FnImpedanceOfFreeSpace(args []types.Value) types.Value {
+	mu0 := physicsConstants["mu0"].Value
+	c := physicsConstants["c"].Value
+	return types.Number(mu0 * c)
+}
+
+// FnMagneticFluxQuantum returns the magnetic flux quantum.
+// Φ_0 = h/(2e)
+func FnMagneticFluxQuantum(args []types.Value) types.Value {
+	h := physicsConstants["h"].Value
+	e := physicsConstants["e_charge"].Value
+	return types.Number(h / (2 * e))
+}
+
+// FnConductanceQuantum returns the conductance quantum.
+// G_0 = 2e²/h
+func FnConductanceQuantum(args []types.Value) types.Value {
+	h := physicsConstants["h"].Value
+	e := physicsConstants["e_charge"].Value
+	return types.Number(2 * e * e / h)
+}
+
+// FnThomsonCrossSection returns the Thomson cross section.
+// σ_T = (8π/3) r_e²
+func FnThomsonCrossSection(args []types.Value) types.Value {
+	ke := physicsConstants["ke"].Value
+	e := physicsConstants["e_charge"].Value
+	me := physicsConstants["me"].Value
+	c := physicsConstants["c"].Value
+
+	re := ke * e * e / (me * c * c) // Classical electron radius
+	return types.Number((8.0 * math.Pi / 3.0) * re * re)
+}
+
+// ════════════════════════════════════════════════════════════════
+// UNIT CONVERSION FUNCTIONS
+// ════════════════════════════════════════════════════════════════
+
+// FnEvToJoules converts electron volts to joules.
+func FnEvToJoules(args []types.Value) types.Value {
+	ev := args[0].AsFloat()
+	return types.Number(ev * physicsConstants["ev"].Value)
+}
+
+// FnJoulesToEv converts joules to electron volts.
+func FnJoulesToEv(args []types.Value) types.Value {
+	j := args[0].AsFloat()
+	return types.Number(j / physicsConstants["ev"].Value)
+}
+
+// FnEvToKelvin converts electron volts to Kelvin.
+// T = E / k_B
+func FnEvToKelvin(args []types.Value) types.Value {
+	ev := args[0].AsFloat()
+	eJ := ev * physicsConstants["ev"].Value
+	kb := physicsConstants["kb"].Value
+	return types.Number(eJ / kb)
+}
+
+// FnKelvinToEv converts Kelvin to electron volts.
+// E = k_B T
+func FnKelvinToEv(args []types.Value) types.Value {
+	T := args[0].AsFloat()
+	kb := physicsConstants["kb"].Value
+	ev := physicsConstants["ev"].Value
+	return types.Number(kb * T / ev)
+}
+
+// FnAmuToKg converts atomic mass units to kilograms.
+func FnAmuToKg(args []types.Value) types.Value {
+	amu := args[0].AsFloat()
+	return types.Number(amu * physicsConstants["amu"].Value)
+}
+
+// FnKgToAmu converts kilograms to atomic mass units.
+func FnKgToAmu(args []types.Value) types.Value {
+	kg := args[0].AsFloat()
+	return types.Number(kg / physicsConstants["amu"].Value)
+}
+
+// FnLyToM converts light years to meters.
+func FnLyToM(args []types.Value) types.Value {
+	ly := args[0].AsFloat()
+	return types.Number(ly * physicsConstants["ly"].Value)
+}
+
+// FnMToLy converts meters to light years.
+func FnMToLy(args []types.Value) types.Value {
+	m := args[0].AsFloat()
+	return types.Number(m / physicsConstants["ly"].Value)
+}
+
+// FnPcToM converts parsecs to meters.
+func FnPcToM(args []types.Value) types.Value {
+	pc := args[0].AsFloat()
+	return types.Number(pc * physicsConstants["pc"].Value)
+}
+
+// FnMToPc converts meters to parsecs.
+func FnMToPc(args []types.Value) types.Value {
+	m := args[0].AsFloat()
+	return types.Number(m / physicsConstants["pc"].Value)
+}
+
+// FnAuToM converts astronomical units to meters.
+func FnAuToM(args []types.Value) types.Value {
+	au := args[0].AsFloat()
+	return types.Number(au * physicsConstants["au"].Value)
+}
+
+// FnMToAu converts meters to astronomical units.
+func FnMToAu(args []types.Value) types.Value {
+	m := args[0].AsFloat()
+	return types.Number(m / physicsConstants["au"].Value)
 }
