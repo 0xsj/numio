@@ -38,6 +38,7 @@ func init() {
 	registerStatsFunctions()
 	registerFinanceFunctions()
 	registerDateFunctions()
+	buildFunctionNamesList()
 
 	// Build function names list for fuzzy matching
 	buildFunctionNamesList()
@@ -558,4 +559,50 @@ func register(name string, minArgs, maxArgs int, variadic bool, handler Function
 		Variadic: variadic,
 		Handler:  handler,
 	}
+}
+
+// ════════════════════════════════════════════════════════════════
+// CALCULUS FUNCTION REGISTRATION
+// ════════════════════════════════════════════════════════════════
+
+func registerCalculusFunctions() {
+	// Numerical derivatives
+	register("nderivative", 2, 3, false, FnNDerivative)
+	register("nderiv", 2, 3, false, FnNDerivative)
+	register("nderivative2", 2, 3, false, FnNDerivative2)
+	register("nderiv2", 2, 3, false, FnNDerivative2)
+
+	// Numerical integration
+	register("nintegral", 3, 4, false, FnNIntegral)
+	register("nintegrate", 3, 4, false, FnNIntegral)
+
+	// Limit
+	register("nlimit", 2, 3, false, FnNLimit)
+
+	// Root finding
+	register("findroot", 3, 4, false, FnFindRoot)
+	register("bisect", 3, 4, false, FnFindRoot)
+
+	// Extrema
+	register("findmin", 3, 4, false, FnFindMin)
+	register("findmax", 3, 4, false, FnFindMax)
+
+	// Summation and product
+	register("summation", 3, 3, false, FnSummation)
+	register("sigma", 3, 3, false, FnSummation)
+	register("seriesproduct", 3, 3, false, FnSeriesProduct)
+	register("cappi", 3, 3, false, FnSeriesProduct)
+
+	// Taylor series
+	register("taylorsin", 1, 2, false, FnTaylorSin)
+	register("taylorcos", 1, 2, false, FnTaylorCos)
+	register("taylorexp", 1, 2, false, FnTaylorExp)
+	register("taylorln", 1, 2, false, FnTaylorLn)
+
+	// Riemann sums
+	register("riemannleft", 3, 4, false, FnRiemannLeft)
+	register("riemannright", 3, 4, false, FnRiemannRight)
+	register("riemannmid", 3, 4, false, FnRiemannMid)
+	register("trapezoidal", 3, 4, false, FnTrapezoidal)
+	register("trapezoid", 3, 4, false, FnTrapezoidal)
 }
