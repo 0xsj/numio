@@ -41,6 +41,7 @@ func init() {
 	registerCalculusFunctions()
 	registerBitwiseFunctions()
 	registerBaseFunctions()
+	registerColorFunctions()
 
 	// Build function names list for fuzzy matching
 	buildFunctionNamesList()
@@ -211,6 +212,17 @@ func validateArgs(fn FunctionDef, args []types.Value) types.Value {
 
 	// Return empty value (not error) on success
 	return types.Empty()
+}
+
+// register is a helper to add functions to the registry.
+func register(name string, minArgs, maxArgs int, variadic bool, handler FunctionHandler) {
+	FunctionRegistry[name] = FunctionDef{
+		Name:     name,
+		MinArgs:  minArgs,
+		MaxArgs:  maxArgs,
+		Variadic: variadic,
+		Handler:  handler,
+	}
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -552,17 +564,6 @@ func registerDateFunctions() {
 	register("thisweekday", 2, 2, false, FnThisWeekday)
 }
 
-// register is a helper to add functions to the registry.
-func register(name string, minArgs, maxArgs int, variadic bool, handler FunctionHandler) {
-	FunctionRegistry[name] = FunctionDef{
-		Name:     name,
-		MinArgs:  minArgs,
-		MaxArgs:  maxArgs,
-		Variadic: variadic,
-		Handler:  handler,
-	}
-}
-
 // ════════════════════════════════════════════════════════════════
 // CALCULUS FUNCTION REGISTRATION
 // ════════════════════════════════════════════════════════════════
@@ -701,4 +702,63 @@ func registerBaseFunctions() {
 	register("sumdigits", 1, 2, false, FnSumDigits)
 	register("revdigits", 1, 2, false, FnReverseDigits)
 	register("ispalindrome", 1, 2, false, FnIsPalindrome)
+}
+
+// ════════════════════════════════════════════════════════════════
+// COLOR FUNCTION REGISTRATION
+// ════════════════════════════════════════════════════════════════
+
+func registerColorFunctions() {
+	// Creation
+	register("rgb", 3, 4, false, FnRGB)
+	register("rgba", 4, 4, false, FnRGBA)
+	register("hsl", 3, 4, false, FnHSL)
+	register("hsla", 4, 4, false, FnHSLA)
+	register("hsv", 3, 3, false, FnHSV)
+	register("hsb", 3, 3, false, FnHSV)
+	register("color", 1, 1, false, FnColorHex)
+
+	// Conversion
+	register("rgb2hsl", 3, 3, false, FnRGB2HSL)
+	register("hsl2rgb", 3, 3, false, FnHSL2RGB)
+	register("rgb2hsv", 3, 3, false, FnRGB2HSV)
+	register("hsv2rgb", 3, 3, false, FnHSV2RGB)
+	register("hex2rgb", 1, 1, false, FnHex2RGB)
+	register("rgb2hex", 3, 3, false, FnRGB2Hex)
+	register("hex2hsl", 1, 1, false, FnHex2HSL)
+
+	// Manipulation
+	register("darken", 2, 2, false, FnDarken)
+	register("lighten", 2, 2, false, FnLighten)
+	register("saturate", 2, 2, false, FnSaturate)
+	register("desaturate", 2, 2, false, FnDesaturate)
+	register("rotatehue", 2, 2, false, FnRotateHue)
+	register("setalpha", 2, 2, false, FnSetAlpha)
+	register("opacity", 2, 2, false, FnSetAlpha)
+
+	// Utilities
+	register("complement", 1, 1, false, FnComplement)
+	register("invert", 1, 1, false, FnInvert)
+	register("grayscale", 1, 1, false, FnGrayscale)
+	register("greyscale", 1, 1, false, FnGrayscale)
+	register("blend", 2, 3, false, FnBlend)
+	register("mix", 2, 3, false, FnBlend)
+	register("contrast", 1, 1, false, FnContrast)
+	register("contrastratio", 2, 2, false, FnContrastRatio)
+
+	// Component extraction
+	register("red", 1, 1, false, FnRed)
+	register("green", 1, 1, false, FnGreen)
+	register("blue", 1, 1, false, FnBlue)
+	register("alpha", 1, 1, false, FnAlpha)
+	register("hue", 1, 1, false, FnHue)
+	register("saturation", 1, 1, false, FnSaturation)
+	register("lightness", 1, 1, false, FnLightness)
+	register("luminance", 1, 1, false, FnLuminance)
+
+	// Palette generation
+	register("triadic", 1, 1, false, FnTriadic)
+	register("tetradic", 1, 1, false, FnTetradic)
+	register("splitcomplement", 1, 1, false, FnSplitComplement)
+	register("analogous", 1, 1, false, FnAnalogous)
 }
