@@ -39,6 +39,8 @@ func init() {
 	registerFinanceFunctions()
 	registerDateFunctions()
 	registerCalculusFunctions()
+	registerBitwiseFunctions()
+	registerBaseFunctions()
 
 	// Build function names list for fuzzy matching
 	buildFunctionNamesList()
@@ -605,4 +607,98 @@ func registerCalculusFunctions() {
 	register("riemannmid", 3, 4, false, FnRiemannMid)
 	register("trapezoidal", 3, 4, false, FnTrapezoidal)
 	register("trapezoid", 3, 4, false, FnTrapezoidal)
+}
+
+// ════════════════════════════════════════════════════════════════
+// BITWISE FUNCTION REGISTRATION
+// ════════════════════════════════════════════════════════════════
+
+func registerBitwiseFunctions() {
+	// Basic bitwise
+	register("band", 2, -1, true, FnBitAnd)
+	register("bor", 2, -1, true, FnBitOr)
+	register("bxor", 2, -1, true, FnBitXor)
+	register("bnot", 1, 1, false, FnBitNot)
+	register("bnand", 2, 2, false, FnBitNand)
+	register("bnor", 2, 2, false, FnBitNor)
+	register("bxnor", 2, 2, false, FnBitXnor)
+
+	// Shifts
+	register("lshift", 2, 2, false, FnLeftShift)
+	register("rshift", 2, 2, false, FnRightShift)
+	register("urshift", 2, 2, false, FnUnsignedRightShift)
+	register("rotl", 2, 2, false, FnRotateLeft)
+	register("rotr", 2, 2, false, FnRotateRight)
+
+	// Counting
+	register("popcount", 1, 1, false, FnPopCount)
+	register("bitcount", 1, 1, false, FnPopCount)
+	register("clz", 1, 1, false, FnLeadingZeros)
+	register("ctz", 1, 1, false, FnTrailingZeros)
+	register("bitlen", 1, 1, false, FnBitLength)
+	register("bytelen", 1, 1, false, FnByteLength)
+
+	// Manipulation
+	register("bitget", 2, 2, false, FnBitGet)
+	register("bitset", 2, 2, false, FnBitSet)
+	register("bitclear", 2, 2, false, FnBitClear)
+	register("bittoggle", 2, 2, false, FnBitToggle)
+	register("bitslice", 3, 3, false, FnBitSlice)
+
+	// Masks
+	register("bitmask", 1, 1, false, FnBitMask)
+	register("bitmaskrange", 2, 2, false, FnBitMaskRange)
+
+	// Byte operations
+	register("bswap16", 1, 1, false, FnByteSwap16)
+	register("bswap32", 1, 1, false, FnByteSwap32)
+	register("bswap64", 1, 1, false, FnByteSwap64)
+	register("bitrev", 1, 1, false, FnBitReverse)
+
+	// Power of 2
+	register("ispow2", 1, 1, false, FnIsPowerOf2)
+	register("nextpow2", 1, 1, false, FnNextPowerOf2)
+	register("prevpow2", 1, 1, false, FnPrevPowerOf2)
+	register("ilog2", 1, 1, false, FnLog2Int)
+}
+
+// ════════════════════════════════════════════════════════════════
+// BASE CONVERSION FUNCTION REGISTRATION
+// ════════════════════════════════════════════════════════════════
+
+func registerBaseFunctions() {
+	// General conversion
+	register("tobase", 2, 2, false, FnToBase)
+	register("frombase", 2, 2, false, FnFromBase)
+
+	// Specific bases
+	register("tohex", 1, 1, false, FnToHex)
+	register("tobin", 1, 1, false, FnToBin)
+	register("tooct", 1, 1, false, FnToOct)
+	register("todec", 1, 1, false, FnToDec)
+
+	// Parsing
+	register("hex", 1, 1, false, FnHex)
+	register("bin", 1, 1, false, FnBin)
+	register("oct", 1, 1, false, FnOct)
+
+	// Formatted output
+	register("hexpad", 1, 2, false, FnHexPad)
+	register("binpad", 1, 2, false, FnBinPad)
+	register("bingroup", 1, 2, false, FnBinGroup)
+
+	// ASCII/char
+	register("ascii", 1, 1, false, FnAscii)
+	register("chr", 1, 1, false, FnChr)
+	register("ord", 1, 1, false, FnOrd)
+
+	// Bytes
+	register("bytes", 1, 3, false, FnBytes)
+	register("frombytes", 1, -1, true, FnFromBytes)
+
+	// Digit utilities
+	register("digits", 1, 2, false, FnDigits)
+	register("sumdigits", 1, 2, false, FnSumDigits)
+	register("revdigits", 1, 2, false, FnReverseDigits)
+	register("ispalindrome", 1, 2, false, FnIsPalindrome)
 }
