@@ -614,7 +614,7 @@ func (p *Parser) parseNumber() ast.Expr {
 		suffix := p.current().Literal
 
 		// Check for period as standalone identifier after number (e.g., "2 months")
-		if period := types.ParsePeriod(suffix); period != types.PeriodNone {
+		if period := types.ParsePeriodStrict(suffix); period != types.PeriodNone {
 			p.advance()
 			return &ast.PeriodExpr{
 				Period: period,
@@ -729,7 +729,7 @@ func (p *Parser) parseIdentifierOrValue() ast.Expr {
 	}
 
 	// Check for standalone period constant (e.g., "year", "month")
-	if period := types.ParsePeriod(name); period != types.PeriodNone {
+	if period := types.ParsePeriodStrict(name); period != types.PeriodNone {
 		return &ast.PeriodExpr{
 			Period: period,
 			Count:  1,

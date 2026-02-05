@@ -404,10 +404,17 @@ func (e *Evaluator) evalIdentifier(id *ast.Identifier) types.Value {
 		return result
 	}
 
-	// Check for time period constants (fallback when used as plain identifier)
-	if period := types.ParsePeriod(id.Name); period != types.PeriodNone {
-		// Return the period's default multiplier as a number
-		// This handles cases like "rent * year" when year is not parsed as PeriodExpr
+	// Check for variables BEFORE period constants
+	value, ok := e.ctx.GetVariable(id.Name)
+	if ok {
+		if e.isTracing() {
+			e.trace.RecordVariable(id.Name, value)
+		}
+		return value
+	}
+
+	// Check for time period constants (only if no variable matched)
+	if period := types.ParsePeriodStrict(id.Name); period != types.PeriodNone {
 		result := types.Number(period.DefaultMultiplier())
 		if e.isTracing() {
 			e.trace.RecordVariable(id.Name, result)
@@ -415,15 +422,12 @@ func (e *Evaluator) evalIdentifier(id *ast.Identifier) types.Value {
 		return result
 	}
 
-	// Check for variables
-	value, ok := e.ctx.GetVariable(id.Name)
-	if !ok {
-		if e.ctx.IsStrict() {
-			return types.Errorf("undefined variable: %s", id.Name)
-		}
-		// In non-strict mode, treat as zero
-		value = types.Number(0)
+	// Undefined variable
+	if e.ctx.IsStrict() {
+		return types.Errorf("undefined variable: %s", id.Name)
 	}
+	// In non-strict mode, treat as zero
+	value = types.Number(0)
 
 	if e.isTracing() {
 		e.trace.RecordVariable(id.Name, value)

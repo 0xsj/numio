@@ -259,3 +259,31 @@ func PeriodNames() []string {
 		"year", "years",
 	}
 }
+
+// ParsePeriodStrict parses a string into a Period, but excludes single-letter
+// abbreviations (s, m, h, d, w, q, y) that commonly collide with variable names.
+// Use this in contexts where the input could be either a variable or a period
+// (e.g., standalone identifiers in expressions).
+// For unambiguous contexts like rate suffixes (/y, per m), use ParsePeriod instead.
+func ParsePeriodStrict(s string) Period {
+	switch strings.ToLower(s) {
+	case "sec", "second", "seconds":
+		return PeriodSecond
+	case "min", "minute", "minutes":
+		return PeriodMinute
+	case "hr", "hour", "hours":
+		return PeriodHour
+	case "day", "days":
+		return PeriodDay
+	case "wk", "week", "weeks":
+		return PeriodWeek
+	case "mo", "month", "months":
+		return PeriodMonth
+	case "qtr", "quarter", "quarters":
+		return PeriodQuarter
+	case "yr", "year", "years":
+		return PeriodYear
+	default:
+		return PeriodNone
+	}
+}
