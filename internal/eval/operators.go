@@ -215,6 +215,22 @@ func ApplyUnaryOp(op ast.UnaryOp, value types.Value) types.Value {
 		return value.Negate()
 	case ast.OpPos:
 		return value
+	case ast.OpFactorial:
+		n := value.AsFloat()
+		if n < 0 {
+			return types.Error("factorial of negative number")
+		}
+		if n != math.Floor(n) {
+			return types.Error("factorial requires an integer")
+		}
+		if n > 170 {
+			return types.Error("factorial overflow")
+		}
+		result := 1.0
+		for i := 2.0; i <= n; i++ {
+			result *= i
+		}
+		return types.Number(result)
 	default:
 		return types.Error("unknown unary operator")
 	}

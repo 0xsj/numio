@@ -369,6 +369,7 @@ type UnaryOp int
 const (
 	OpNeg UnaryOp = iota // -x
 	OpPos                // +x (no-op, but valid syntax)
+	OpFactorial
 )
 
 // String returns the operator symbol.
@@ -378,6 +379,8 @@ func (op UnaryOp) String() string {
 		return "-"
 	case OpPos:
 		return "+"
+	case OpFactorial:
+		return "!"
 	default:
 		return "?"
 	}

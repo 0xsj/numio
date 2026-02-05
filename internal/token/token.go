@@ -32,6 +32,7 @@ const (
 	EQUALS // =
 	COMMA  // ,
 	COLON  // :
+	BANG   // !
 
 	// Keywords
 	IN  // in, to (for conversions)
@@ -86,6 +87,7 @@ var typeNames = map[Type]string{
 	COMMENT:    "COMMENT",
 	WHITESPACE: "WHITESPACE",
 	NEWLINE:    "NEWLINE",
+	BANG:       "BANG",
 }
 
 func (t Type) String() string {

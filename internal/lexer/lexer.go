@@ -213,6 +213,10 @@ func (l *Lexer) NextToken() token.Token {
 		l.readChar()
 		return token.New(token.COLON, ":", startPos)
 
+	case '!':
+		l.readChar()
+		return token.New(token.BANG, "!", startPos)
+
 	case '%':
 		l.readChar()
 		return token.New(token.PERCENT, "%", startPos)

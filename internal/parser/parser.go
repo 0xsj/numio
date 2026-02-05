@@ -500,6 +500,12 @@ func (p *Parser) parsePostfixExpr() ast.Expr {
 		return nil
 	}
 
+	// Check for factorial postfix: expr!
+	if p.check(token.BANG) {
+		p.advance()
+		expr = &ast.UnaryExpr{Op: ast.OpFactorial, Expr: expr}
+	}
+
 	// Check for rate suffix: /month, /year, per month, per year
 	expr = p.tryParseRateSuffix(expr)
 
