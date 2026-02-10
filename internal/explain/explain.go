@@ -28,6 +28,9 @@ type Step struct {
 	// Left and Right are operand representations (for binary ops)
 	Left  string
 	Right string
+
+	// Details are contextual detail lines (exchange rates, conversion factors, breakdowns)
+	Details []string
 }
 
 // Trace holds the complete evaluation trace for an expression.

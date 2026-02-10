@@ -82,13 +82,28 @@ func (f *Formatter) FormatOneLine(trace *Trace) string {
 }
 
 // FormatSteps formats just the steps as a list.
+// It iterates all recorded steps, skipping pure literals/variables,
+// so intermediate operations (conversions, percentages) aren't lost.
 func (f *Formatter) FormatSteps(trace *Trace) []string {
 	if trace == nil || trace.IsEmpty() {
 		return nil
 	}
 
 	var lines []string
-	f.collectStepLines(trace.Root, 0, &lines)
+
+	// Walk all recorded steps, keeping only operations (skip literals/variables)
+	for _, step := range trace.Steps {
+		if step == nil || step.Op == "" {
+			continue
+		}
+		f.collectStepLines(step, 0, &lines)
+	}
+
+	// If nothing was collected (e.g. only literals), fall back to root
+	if len(lines) == 0 && trace.Root != nil {
+		f.collectStepLines(trace.Root, 0, &lines)
+	}
+
 	return lines
 }
 
@@ -193,7 +208,21 @@ func (f *Formatter) formatVerbose(trace *Trace) string {
 	sb.WriteString("\n\n")
 
 	sb.WriteString("Steps:\n")
-	f.formatStepVerbose(&sb, trace.Root, 0)
+
+	// Walk all recorded steps, keeping only operations
+	rendered := false
+	for _, step := range trace.Steps {
+		if step == nil || step.Op == "" {
+			continue
+		}
+		f.formatStepVerbose(&sb, step, 0)
+		rendered = true
+	}
+
+	// Fall back to root if nothing was rendered
+	if !rendered && trace.Root != nil {
+		f.formatStepVerbose(&sb, trace.Root, 0)
+	}
 
 	sb.WriteString("\nResult: ")
 	sb.WriteString(f.formatValue(trace.FinalResult))
@@ -213,6 +242,14 @@ func (f *Formatter) formatStepVerbose(sb *strings.Builder, step *Step, depth int
 	sb.WriteString(indent)
 	sb.WriteString(f.formatStepLine(step))
 	sb.WriteString("\n")
+
+	// Format detail lines with extra indentation
+	detailIndent := strings.Repeat(f.Indent, depth+1)
+	for _, detail := range step.Details {
+		sb.WriteString(detailIndent)
+		sb.WriteString(detail)
+		sb.WriteString("\n")
+	}
 
 	// Format sub-steps
 	for _, sub := range step.SubSteps {
@@ -252,6 +289,12 @@ func (f *Formatter) collectStepLines(step *Step, depth int, lines *[]string) {
 
 	indent := strings.Repeat(f.Indent, depth)
 	*lines = append(*lines, indent+f.formatStepLine(step))
+
+	// Collect detail lines with extra indentation
+	detailIndent := strings.Repeat(f.Indent, depth+1)
+	for _, detail := range step.Details {
+		*lines = append(*lines, detailIndent+detail)
+	}
 
 	for _, sub := range step.SubSteps {
 		f.collectStepLines(sub, depth+1, lines)

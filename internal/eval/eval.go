@@ -3,6 +3,7 @@
 package eval
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/0xsj/numio/internal/ast"
@@ -572,7 +573,12 @@ func (e *Evaluator) evalPercentOf(expr *ast.PercentOfExpr) types.Value {
 	result := value.WithAmount(resultNum)
 
 	if e.isTracing() {
-		e.trace.RecordPercentOf(percent, value, result)
+		step := e.trace.RecordPercentOf(percent, value, result)
+		if step != nil {
+			step.Details = []string{
+				fmt.Sprintf("%s × %s = %s", formatDetail(pct), formatDetail(value.AsFloat()), formatDetail(resultNum)),
+			}
+		}
 	}
 
 	return result
@@ -588,7 +594,10 @@ func (e *Evaluator) evalConversion(expr *ast.ConversionExpr) types.Value {
 	result := ConvertValue(value, expr.Target, e.ctx)
 
 	if e.isTracing() {
-		e.trace.RecordConversion(value, expr.Target, result)
+		step := e.trace.RecordConversion(value, expr.Target, result)
+		if step != nil && !result.IsError() {
+			step.Details = buildConversionDetails(value, expr.Target, result, e.ctx)
+		}
 	}
 
 	return result
@@ -627,7 +636,10 @@ func (e *Evaluator) convertToMultiple(value types.Value, targets []string) types
 		results[i] = converted
 
 		if e.isTracing() {
-			e.trace.RecordConversion(value, target, converted)
+			step := e.trace.RecordConversion(value, target, converted)
+			if step != nil && !converted.IsError() {
+				step.Details = buildConversionDetails(value, target, converted, e.ctx)
+			}
 		}
 	}
 
@@ -664,7 +676,12 @@ func (e *Evaluator) evalCall(expr *ast.CallExpr) types.Value {
 	result := CallFunction(name, args)
 
 	if e.isTracing() {
-		e.trace.RecordFuncCall(expr.Name, args, result)
+		step := e.trace.RecordFuncCall(expr.Name, args, result)
+		if step != nil {
+			if info, ok := GetPhysicsFunctionInfo(name); ok {
+				step.Details = buildPhysicsDetails(info, args)
+			}
+		}
 	}
 
 	return result
@@ -718,4 +735,136 @@ func (e *Evaluator) evalWithBindings(expr ast.Expr, bindings map[string]types.Va
 // This is useful for evaluating function bodies with parameter values.
 func (e *Evaluator) EvalExprWithBindings(expr ast.Expr, bindings map[string]types.Value) types.Value {
 	return e.evalWithBindings(expr, bindings)
+}
+
+// ════════════════════════════════════════════════════════════════
+// EXPLAIN DETAIL HELPERS
+// ════════════════════════════════════════════════════════════════
+
+// buildConversionDetails builds detail lines for a conversion step.
+func buildConversionDetails(value types.Value, target string, result types.Value, ctx *Context) []string {
+	fromCode := valueSourceCode(value)
+	toCode := resolveTargetCode(target)
+	amount := value.AsFloat()
+
+	// Unit conversion
+	if value.IsUnit() && value.Unit != nil {
+		targetUnit := types.ParseUnit(target)
+		if targetUnit != nil && value.Unit.Type != types.UnitTypeTemperature {
+			factor := value.Unit.ToBase / targetUnit.ToBase
+			return []string{
+				fmt.Sprintf("1 %s = %s %s", value.Unit.Code, formatDetail(factor), targetUnit.Code),
+				fmt.Sprintf("%s × %s = %s", formatDetail(amount), formatDetail(factor), formatDetail(result.AsFloat())),
+			}
+		}
+		return nil
+	}
+
+	// Currency/crypto/metal conversion — look up rate
+	if fromCode != "" && toCode != "" && ctx != nil {
+		if rate, ok := ctx.GetRate(fromCode, toCode); ok {
+			return []string{
+				fmt.Sprintf("Rate: 1 %s = %s %s", fromCode, formatDetail(rate), toCode),
+				fmt.Sprintf("%s × %s = %s", formatDetail(amount), formatDetail(rate), formatDetail(result.AsFloat())),
+			}
+		}
+	}
+
+	return nil
+}
+
+// valueSourceCode extracts the source code identifier from a value (e.g., "USD", "BTC", "XAU", "km").
+func valueSourceCode(v types.Value) string {
+	switch v.Kind {
+	case types.ValueCurrency:
+		if v.Curr != nil {
+			return v.Curr.Code
+		}
+	case types.ValueCrypto:
+		if v.Crypto != nil {
+			return v.Crypto.Code
+		}
+	case types.ValueMetal:
+		if v.Metal != nil {
+			return v.Metal.Code
+		}
+	case types.ValueWithUnit:
+		if v.Unit != nil {
+			return v.Unit.Code
+		}
+	}
+	return ""
+}
+
+// resolveTargetCode resolves a target string to a canonical code.
+func resolveTargetCode(target string) string {
+	if c := types.ParseCurrency(target); c != nil {
+		return c.Code
+	}
+	if c := types.ParseCrypto(target); c != nil {
+		return c.Code
+	}
+	if m := types.ParseMetal(target); m != nil {
+		return m.Code
+	}
+	if u := types.ParseUnit(target); u != nil {
+		return u.Code
+	}
+	return strings.ToUpper(target)
+}
+
+// buildPhysicsDetails builds detail lines for a physics function call step.
+func buildPhysicsDetails(info PhysicsFunctionInfo, args []types.Value) []string {
+	var details []string
+
+	// Line 1: Formula + description
+	if info.Formula != "" {
+		line := info.Formula
+		if info.Description != "" {
+			line += " (" + info.Description + ")"
+		}
+		details = append(details, line)
+	}
+
+	// Line 2: Argument mapping
+	if info.Args != "" {
+		argNames := strings.Split(info.Args, ",")
+		var parts []string
+		for i, name := range argNames {
+			name = strings.TrimSpace(name)
+			// Skip optional args if no corresponding value was passed
+			isOptional := strings.HasPrefix(name, "[") && strings.HasSuffix(name, "]")
+			if isOptional {
+				name = strings.Trim(name, "[]")
+				if i >= len(args) {
+					continue
+				}
+			}
+			if i < len(args) {
+				parts = append(parts, fmt.Sprintf("%s = %s", name, formatDetail(args[i].AsFloat())))
+			}
+		}
+		if len(parts) > 0 {
+			details = append(details, strings.Join(parts, ", "))
+		}
+	}
+
+	return details
+}
+
+// formatDetail formats a float for display in detail lines with smart precision.
+func formatDetail(n float64) string {
+	if n == float64(int64(n)) && n < 1e15 {
+		return fmt.Sprintf("%g", n)
+	}
+	if n >= 100 {
+		return fmt.Sprintf("%.2f", n)
+	}
+	if n >= 1 {
+		return fmt.Sprintf("%.4f", n)
+	}
+	if n >= 0.0001 {
+		return fmt.Sprintf("%.6f", n)
+	}
+	return fmt.Sprintf("%.8f", n)
 }

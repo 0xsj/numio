@@ -6,6 +6,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/driver/desktop"
 )
 
 // ════════════════════════════════════════════════════════════════
@@ -46,13 +47,10 @@ func (a *App) Run() {
 	content := container.NewWithoutLayout(a.editor)
 	a.editor.Resize(a.window.Canvas().Size())
 
-	// Handle resize
-	a.window.Canvas().SetOnTypedKey(func(ev *fyne.KeyEvent) {
-		// Forward to editor
-		a.editor.TypedKey(ev)
-	})
-
 	a.window.SetContent(content)
+
+	// Register keyboard shortcuts (Cmd/Ctrl + key)
+	a.registerShortcuts()
 
 	// Resize editor when window resizes
 	a.window.Canvas().SetContent(content)
@@ -90,6 +88,56 @@ func (a *App) Stop() {
 	if a.cursorTick != nil {
 		a.cursorTick.Stop()
 	}
+}
+
+// ════════════════════════════════════════════════════════════════
+// KEYBOARD SHORTCUTS
+// ════════════════════════════════════════════════════════════════
+
+func (a *App) registerShortcuts() {
+	c := a.window.Canvas()
+
+	// Cmd+/ and Ctrl+/ → Toggle help
+	c.AddShortcut(&desktop.CustomShortcut{
+		KeyName:  fyne.KeySlash,
+		Modifier: fyne.KeyModifierSuper,
+	}, func(_ fyne.Shortcut) {
+		a.editor.ToggleHelp()
+	})
+	c.AddShortcut(&desktop.CustomShortcut{
+		KeyName:  fyne.KeySlash,
+		Modifier: fyne.KeyModifierControl,
+	}, func(_ fyne.Shortcut) {
+		a.editor.ToggleHelp()
+	})
+
+	// Cmd+E and Ctrl+E → Explain
+	c.AddShortcut(&desktop.CustomShortcut{
+		KeyName:  fyne.KeyE,
+		Modifier: fyne.KeyModifierSuper,
+	}, func(_ fyne.Shortcut) {
+		a.editor.ShowExplain()
+	})
+	c.AddShortcut(&desktop.CustomShortcut{
+		KeyName:  fyne.KeyE,
+		Modifier: fyne.KeyModifierControl,
+	}, func(_ fyne.Shortcut) {
+		a.editor.ShowExplain()
+	})
+
+	// Cmd+K and Ctrl+K → Toggle vim mode
+	c.AddShortcut(&desktop.CustomShortcut{
+		KeyName:  fyne.KeyK,
+		Modifier: fyne.KeyModifierSuper,
+	}, func(_ fyne.Shortcut) {
+		a.editor.ToggleVimMode()
+	})
+	c.AddShortcut(&desktop.CustomShortcut{
+		KeyName:  fyne.KeyK,
+		Modifier: fyne.KeyModifierControl,
+	}, func(_ fyne.Shortcut) {
+		a.editor.ToggleVimMode()
+	})
 }
 
 // ════════════════════════════════════════════════════════════════

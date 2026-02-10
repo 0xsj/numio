@@ -1,8 +1,10 @@
 package main
 
 import (
+	"context"
 	"image/color"
 	"sync"
+	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -85,6 +87,13 @@ func NewEditorWidget() *EditorWidget {
 	w.ExtendBaseWidget(w)
 	w.updateState()
 
+	// Fetch rates in background on startup
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		w.editor.Engine().RefreshRates(ctx)
+	}()
+
 	return w
 }
 
@@ -166,22 +175,6 @@ func (w *EditorWidget) FocusLost() {
 
 // TypedRune handles character input.
 func (w *EditorWidget) TypedRune(r rune) {
-	// Handle Cmd+key combinations
-	if w.superPressed {
-		switch r {
-		case '/', '÷': // ÷ is what macOS might send for Cmd+/
-			w.toggleHelp()
-			return
-		case 'e', 'E':
-			w.showExplain()
-			w.Refresh()
-			return
-		case 'k', 'K':
-			w.ToggleVimMode()
-			return
-		}
-	}
-
 	// Close popup on any key
 	if w.activePopup != PopupNone {
 		w.activePopup = PopupNone
@@ -210,30 +203,13 @@ func (w *EditorWidget) TypedRune(r rune) {
 
 // TypedKey handles special key input.
 func (w *EditorWidget) TypedKey(ev *fyne.KeyEvent) {
-	// Handle Cmd+key via TypedKey as well (some keys come here)
-	if w.superPressed {
-		switch ev.Name {
-		case fyne.KeySlash:
-			w.toggleHelp()
-			return
-		case fyne.KeyE:
-			w.showExplain()
-			w.Refresh()
-			return
-		case fyne.KeyK:
-			w.ToggleVimMode()
-			return
-		}
-	}
-
-	// Keep F-keys as backup
+	// F-key fallbacks (always available regardless of modifier state)
 	switch ev.Name {
 	case fyne.KeyF1:
-		w.toggleHelp()
+		w.ToggleHelp()
 		return
 	case fyne.KeyF2:
-		w.showExplain()
-		w.Refresh()
+		w.ShowExplain()
 		return
 	case fyne.KeyF3:
 		w.ToggleVimMode()
@@ -309,7 +285,8 @@ func (w *EditorWidget) KeyUp(ev *fyne.KeyEvent) {
 // HELP TOGGLE
 // ════════════════════════════════════════════════════════════════
 
-func (w *EditorWidget) toggleHelp() {
+// ToggleHelp toggles the help popup on/off.
+func (w *EditorWidget) ToggleHelp() {
 	if w.activePopup == PopupHelp {
 		w.activePopup = PopupNone
 	} else {
@@ -387,9 +364,9 @@ func (w *EditorWidget) processVimNormalModeKey(ev KeyEvent) {
 	switch key {
 	// Help & Explain (also available via Cmd+/)
 	case "?":
-		w.toggleHelp()
+		w.ToggleHelp()
 	case "e":
-		w.showExplain()
+		w.ShowExplain()
 
 	// Mode switching
 	case "i":
@@ -533,7 +510,8 @@ func (w *EditorWidget) processVimVisualModeKey(ev KeyEvent) {
 // EXPLAIN POPUP
 // ════════════════════════════════════════════════════════════════
 
-func (w *EditorWidget) showExplain() {
+// ShowExplain triggers the explain popup for the current line.
+func (w *EditorWidget) ShowExplain() {
 	// Get current line
 	cursor := w.editor.Cursor()
 	line := w.editor.Buffer().Line(cursor.Row())
@@ -573,6 +551,7 @@ func (w *EditorWidget) showExplain() {
 	w.explainResult += "Result: " + result.Value.String()
 
 	w.activePopup = PopupExplain
+	w.Refresh()
 }
 
 // ════════════════════════════════════════════════════════════════
