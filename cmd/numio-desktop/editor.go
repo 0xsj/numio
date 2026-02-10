@@ -14,6 +14,8 @@ import (
 	"fyne.io/fyne/v2/widget"
 
 	"github.com/0xsj/numio/internal/editor"
+	"github.com/0xsj/numio/internal/fetch"
+	"github.com/0xsj/numio/internal/graph"
 	"github.com/0xsj/numio/internal/rpc"
 	"github.com/0xsj/numio/internal/tui/keymap"
 )
@@ -39,6 +41,7 @@ const (
 	PopupNone PopupType = iota
 	PopupHelp
 	PopupExplain
+	PopupHistory
 )
 
 // ════════════════════════════════════════════════════════════════
@@ -75,6 +78,12 @@ type EditorWidget struct {
 	// Popup state
 	activePopup   PopupType
 	explainResult string
+
+	// History popup state
+	historyResult  *fetch.HistoryResult
+	historyRange   fetch.HistoryRange
+	historyLoading bool
+	historyError   string
 
 	// Vim mode toggle (default: true)
 	vimMode bool
@@ -208,7 +217,24 @@ func (w *EditorWidget) FocusLost() {
 
 // TypedRune handles character input.
 func (w *EditorWidget) TypedRune(r rune) {
-	// Close popup on any key
+	// History popup: consume ALL keys while showing (never leak to editor)
+	if w.activePopup == PopupHistory {
+		if !w.historyLoading {
+			if hr, ok := fetch.RangeFromKey(string(r)); ok {
+				w.historyRange = hr
+				w.fetchHistory()
+				return
+			}
+			// Non-cycling key closes popup
+			w.activePopup = PopupNone
+			w.historyResult = nil
+			w.historyError = ""
+			w.Refresh()
+		}
+		return // Consume key during loading too
+	}
+
+	// Close other popups on any key
 	if w.activePopup != PopupNone {
 		w.activePopup = PopupNone
 		w.Refresh()
@@ -250,7 +276,45 @@ func (w *EditorWidget) TypedKey(ev *fyne.KeyEvent) {
 		return
 	}
 
-	// Close popup on Escape or any key
+	// History popup: consume ALL keys while showing (never leak to editor)
+	if w.activePopup == PopupHistory {
+		if !w.historyLoading {
+			switch ev.Name {
+			case fyne.KeyRight:
+				w.historyRange = w.historyRange.Next()
+				w.fetchHistory()
+				return
+			case fyne.KeyLeft:
+				w.historyRange = w.historyRange.Prev()
+				w.fetchHistory()
+				return
+			case fyne.KeyEscape:
+				w.activePopup = PopupNone
+				w.historyResult = nil
+				w.historyError = ""
+				w.Refresh()
+				return
+			default:
+				// Any other special key closes
+				w.activePopup = PopupNone
+				w.historyResult = nil
+				w.historyError = ""
+				w.Refresh()
+				return
+			}
+		}
+		// Consume key during loading — allow Escape to cancel
+		if ev.Name == fyne.KeyEscape {
+			w.activePopup = PopupNone
+			w.historyResult = nil
+			w.historyError = ""
+			w.historyLoading = false
+			w.Refresh()
+		}
+		return
+	}
+
+	// Close other popups on Escape or any key
 	if w.activePopup != PopupNone {
 		w.activePopup = PopupNone
 		w.Refresh()
@@ -752,6 +816,106 @@ func (w *EditorWidget) ShowExplain() {
 }
 
 // ════════════════════════════════════════════════════════════════
+// HISTORY POPUP
+// ════════════════════════════════════════════════════════════════
+
+// ShowHistory triggers the price history popup for the current line.
+// If the popup is already showing, it cycles to the next range.
+func (w *EditorWidget) ShowHistory() {
+	if w.activePopup == PopupHistory && !w.historyLoading {
+		// Cycle range
+		w.historyRange = w.historyRange.Next()
+		w.fetchHistory()
+		return
+	}
+
+	// Fresh open
+	w.historyRange = fetch.HistoryRange7d
+	w.fetchHistory()
+}
+
+func (w *EditorWidget) fetchHistory() {
+	// Get current line
+	cursor := w.editor.Cursor()
+	line := w.editor.Buffer().Line(cursor.Row())
+
+	// If current line is empty, find the last non-empty line
+	if line == "" {
+		for i := cursor.Row() - 1; i >= 0; i-- {
+			candidate := w.editor.Buffer().Line(i)
+			if candidate != "" {
+				line = candidate
+				break
+			}
+		}
+	}
+
+	if line == "" {
+		w.historyError = "No chartable asset on this line"
+		w.historyResult = nil
+		w.historyLoading = false
+		w.activePopup = PopupHistory
+		w.Refresh()
+		return
+	}
+
+	// Evaluate line to detect asset (with text scanning fallback)
+	result := w.editor.Engine().Eval(line)
+	code, kind, ok := fetch.DetectAssetFromLine(result, line)
+	if !ok {
+		w.historyError = "No chartable asset on this line"
+		w.historyResult = nil
+		w.historyLoading = false
+		w.activePopup = PopupHistory
+		w.Refresh()
+		return
+	}
+
+	if kind == fetch.AssetKindMetal {
+		w.historyError = "Historical charts not yet available for metals"
+		w.historyResult = nil
+		w.historyLoading = false
+		w.activePopup = PopupHistory
+		w.Refresh()
+		return
+	}
+
+	if kind == fetch.AssetKindFiat && strings.ToUpper(code) == "USD" {
+		w.historyError = "USD is the base currency"
+		w.historyResult = nil
+		w.historyLoading = false
+		w.activePopup = PopupHistory
+		w.Refresh()
+		return
+	}
+
+	w.historyLoading = true
+	w.historyError = ""
+	w.activePopup = PopupHistory
+	w.Refresh()
+
+	hr := w.historyRange
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+
+		result, err := fetch.FetchHistory(ctx, code, kind, hr)
+
+		fyne.Do(func() {
+			w.historyLoading = false
+			if err != nil {
+				w.historyError = err.Error()
+				w.historyResult = nil
+			} else {
+				w.historyResult = result
+				w.historyError = ""
+			}
+			w.Refresh()
+		})
+	}()
+}
+
+// ════════════════════════════════════════════════════════════════
 // STATE MANAGEMENT
 // ════════════════════════════════════════════════════════════════
 
@@ -1001,9 +1165,9 @@ func (r *editorRenderer) renderStatusBar(state *rpc.RenderState, size fyne.Size)
 	// Help hints (center)
 	var hints string
 	if w.vimMode {
-		hints = "⌘/ help   ⌘E explain   ⌘K simple mode"
+		hints = "⌘/ help   ⌘E explain   ⌘P chart   ⌘K simple mode"
 	} else {
-		hints = "⌘/ help   ⌘E explain   ⌘K vim mode"
+		hints = "⌘/ help   ⌘E explain   ⌘P chart   ⌘K vim mode"
 	}
 	hintsText := canvas.NewText(hints, ColorStatusText)
 	hintsText.TextSize = 11
@@ -1104,10 +1268,29 @@ func (r *editorRenderer) renderPopup(size fyne.Size) {
 			content = append(content, "  "+line)
 		}
 		content = append(content, "", "Press any key to close")
+
+	case PopupHistory:
+		if w.historyLoading {
+			title = "Price Chart"
+			content = []string{"", "  Fetching price history...", "", "Press any key to close"}
+		} else if w.historyError != "" {
+			title = "Price Chart"
+			content = []string{"", "  " + w.historyError, "", "Press any key to close"}
+		} else if w.historyResult != nil {
+			// Render colorized history popup directly
+			r.renderHistoryPopup(size)
+			return
+		} else {
+			title = "Price Chart"
+			content = []string{"", "  No data available", "", "Press any key to close"}
+		}
 	}
 
 	// Calculate popup dimensions
 	popupWidth := float32(360)
+	if w.activePopup == PopupHistory {
+		popupWidth = 480
+	}
 	popupHeight := float32(len(content)*18 + 50)
 	popupX := (size.Width - popupWidth) / 2
 	popupY := (size.Height - popupHeight) / 2
@@ -1151,6 +1334,210 @@ func (r *editorRenderer) renderPopup(size fyne.Size) {
 	}
 }
 
+// renderHistoryPopup renders the history chart popup with full colorization.
+func (r *editorRenderer) renderHistoryPopup(size fyne.Size) {
+	w := r.widget
+	hr := w.historyResult
+	prices := hr.Prices()
+	stats := graph.ComputeStats(prices)
+	forecast := fetch.LinearForecast(prices)
+
+	// Layout constants
+	popupWidth := float32(480)
+	pad := float32(20)
+	lineH := float32(18)
+
+	// Count lines to calculate height
+	lines := 0
+	lines += 2 // title + range selector
+	lines += 1 // blank
+	lines += 1 // sparkline
+	if forecast != nil {
+		lines += 1 // "historical / forecast" label
+	}
+	lines += 1 // blank
+	lines += 3 // stats (open/close/change)
+	if forecast != nil {
+		lines += 3 // blank + heading + target line
+	}
+	lines += 2 // blank + hint
+
+	popupHeight := float32(lines)*lineH + 50
+	popupX := (size.Width - popupWidth) / 2
+	popupY := (size.Height - popupHeight) / 2
+
+	// Background with chart-specific border
+	bg := canvas.NewRectangle(ColorPopupBackground)
+	bg.Resize(fyne.NewSize(popupWidth, popupHeight))
+	bg.Move(fyne.NewPos(popupX, popupY))
+	bg.StrokeColor = ColorChartBorder
+	bg.StrokeWidth = 1
+	r.objects = append(r.objects, bg)
+
+	// Helper to add a text span
+	addText := func(text string, clr color.Color, x, y float32, bold bool) float32 {
+		t := canvas.NewText(text, clr)
+		t.TextSize = 12
+		t.TextStyle = fyne.TextStyle{Monospace: true, Bold: bold}
+		t.Move(fyne.NewPos(x, y))
+		r.objects = append(r.objects, t)
+		return t.MinSize().Width
+	}
+
+	x := popupX + pad
+	y := popupY + 14
+
+	// Title
+	title := hr.Asset + "/" + hr.Base + " Price Chart"
+	titleText := canvas.NewText(title, ColorPopupTitle)
+	titleText.TextSize = 14
+	titleText.TextStyle = fyne.TextStyle{Monospace: true, Bold: true}
+	titleText.Move(fyne.NewPos(x, y))
+	r.objects = append(r.objects, titleText)
+	y += lineH + 4
+
+	// Range selector tabs
+	xTab := x
+	ranges := []struct {
+		key   string
+		label string
+		r     fetch.HistoryRange
+	}{
+		{"1", "7d", fetch.HistoryRange7d},
+		{"2", "30d", fetch.HistoryRange30d},
+		{"3", "90d", fetch.HistoryRange90d},
+		{"4", "1y", fetch.HistoryRange1y},
+	}
+	for _, rl := range ranges {
+		if rl.r == hr.Range {
+			xTab += addText("["+rl.key+":"+rl.label+"]", ColorChartRangeActive, xTab, y, true)
+			xTab += 6 // spacing
+		} else {
+			xTab += addText(" "+rl.key+":"+rl.label+" ", ColorChartRangeDim, xTab, y, false)
+			xTab += 2
+		}
+	}
+	y += lineH + 6
+
+	// Sparkline (historical)
+	sparkline := graph.SparklineFixed(prices, 44)
+	xSpark := x
+	xSpark += addText("  ", ColorChartValue, xSpark, y, false)
+	xSpark += addText(sparkline, ColorChartSparkline, xSpark, y, false)
+
+	// Forecast sparkline extension
+	if forecast != nil {
+		forecastWidth := len(forecast.Points)
+		if forecastWidth > 8 {
+			forecastWidth = 8
+		}
+		if forecastWidth > 0 {
+			allPrices := append(prices, forecast.Points[:forecastWidth]...)
+			fStats := graph.ComputeStats(allPrices)
+			forecastSpark := graph.SparklineBounded(forecast.Points[:forecastWidth], fStats.Min, fStats.Max)
+			xSpark += addText("╎", ColorChartForecastDim, xSpark, y, false)
+			xSpark += addText(forecastSpark, ColorChartForecast, xSpark, y, false)
+		}
+	}
+
+	// Trend symbol
+	trendColor := ColorChartChangeUp
+	if stats.Trend.Symbol() == "↓" {
+		trendColor = ColorChartChangeDown
+	}
+	addText(" "+stats.Trend.Symbol(), trendColor, xSpark, y, false)
+	y += lineH
+
+	// "historical / forecast" label line
+	if forecast != nil {
+		xLabel := x
+		xLabel += addText("  historical", ColorChartRangeDim, xLabel, y, false)
+		addText("              forecast", ColorChartForecastDim, xLabel, y, false)
+		y += lineH
+	}
+	y += 6
+
+	// Stats grid
+	open := historyFormatPrice(stats.First)
+	close_ := historyFormatPrice(stats.Last)
+	high := historyFormatPrice(stats.Max)
+	low := historyFormatPrice(stats.Min)
+	avg := historyFormatPrice(stats.Avg)
+
+	// Row 1: Open / High
+	xRow := x
+	xRow += addText("  Open:   ", ColorChartLabel, xRow, y, false)
+	xRow += addText(open, ColorChartValue, xRow, y, false)
+	xRow += addText("    ", ColorChartLabel, xRow, y, false)
+	xRow += addText("High:  ", ColorChartLabel, xRow, y, false)
+	addText(high, ColorChartValue, xRow, y, false)
+	y += lineH
+
+	// Row 2: Close / Low
+	xRow = x
+	xRow += addText("  Close:  ", ColorChartLabel, xRow, y, false)
+	xRow += addText(close_, ColorChartValue, xRow, y, false)
+	xRow += addText("    ", ColorChartLabel, xRow, y, false)
+	xRow += addText("Low:   ", ColorChartLabel, xRow, y, false)
+	addText(low, ColorChartValue, xRow, y, false)
+	y += lineH
+
+	// Row 3: Change / Avg
+	changeStr := historyFormatChange(stats.Change)
+	changeColor := ColorChartChangeUp
+	if stats.Change < 0 {
+		changeColor = ColorChartChangeDown
+	}
+	xRow = x
+	xRow += addText("  Change: ", ColorChartLabel, xRow, y, false)
+	xRow += addText(changeStr, changeColor, xRow, y, true)
+	xRow += addText("    ", ColorChartLabel, xRow, y, false)
+	xRow += addText("Avg:   ", ColorChartLabel, xRow, y, false)
+	addText(avg, ColorChartValue, xRow, y, false)
+	y += lineH
+
+	// Forecast section
+	if forecast != nil {
+		y += 6
+
+		// Forecast heading
+		addText("  Forecast ("+forecast.Label+")", ColorChartForecastHead, x, y, true)
+		y += lineH
+
+		// Target / Change / R²
+		targetStr := historyFormatPrice(forecast.Target)
+		fcChangeStr := historyFormatChange(forecast.ChangePct)
+		fcChangeColor := ColorChartChangeUp
+		if forecast.ChangePct < 0 {
+			fcChangeColor = ColorChartChangeDown
+		}
+		r2Str := historyFormatR2(forecast.RSquared)
+
+		xRow = x
+		xRow += addText("  Target: ", ColorChartLabel, xRow, y, false)
+		xRow += addText(targetStr, ColorChartValue, xRow, y, false)
+		xRow += addText("  ", ColorChartLabel, xRow, y, false)
+		xRow += addText(fcChangeStr, fcChangeColor, xRow, y, true)
+		xRow += addText("  R²: ", ColorChartLabel, xRow, y, false)
+		xRow += addText(r2Str, ColorChartValue, xRow, y, false)
+
+		// Confidence with color
+		conf := forecast.Confidence()
+		confColor := ColorChartChangeDown // low = red
+		if conf == "high" {
+			confColor = ColorChartChangeUp
+		} else if conf == "moderate" {
+			confColor = ColorChartRangeActive // gold
+		}
+		addText(" ("+conf+")", confColor, xRow, y, false)
+		y += lineH
+	}
+
+	// Hint line
+	y += 6
+	addText("1-4 select · ⌘P cycle · any key to close", ColorPopupHint, x, y, false)
+}
+
 // Objects returns all canvas objects.
 func (r *editorRenderer) Objects() []fyne.CanvasObject {
 	return r.objects
@@ -1158,3 +1545,78 @@ func (r *editorRenderer) Objects() []fyne.CanvasObject {
 
 // Destroy cleans up resources.
 func (r *editorRenderer) Destroy() {}
+
+// ════════════════════════════════════════════════════════════════
+// HISTORY HELPERS
+// ════════════════════════════════════════════════════════════════
+
+func historyFormatPrice(n float64) string {
+	if n == 0 {
+		return "0"
+	}
+	prefix := ""
+	if n < 0 {
+		prefix = "-"
+		n = -n
+	}
+
+	var decimals int
+	if n >= 1000 {
+		decimals = 0
+	} else if n >= 1 {
+		decimals = 2
+	} else if n >= 0.01 {
+		decimals = 4
+	} else {
+		decimals = 6
+	}
+
+	intPart := int64(n)
+	fracPart := n - float64(intPart)
+
+	intStr := fmt.Sprintf("%d", intPart)
+
+	if decimals == 0 {
+		return prefix + addCommas(intStr)
+	}
+
+	format := fmt.Sprintf("%%.%df", decimals)
+	fracStr := fmt.Sprintf(format, fracPart)
+	// Remove leading "0"
+	if len(fracStr) > 1 && fracStr[0] == '0' {
+		fracStr = fracStr[1:]
+	}
+
+	return prefix + addCommas(intStr) + fracStr
+}
+
+func addCommas(s string) string {
+	if len(s) <= 3 {
+		return s
+	}
+	result := ""
+	start := len(s) % 3
+	if start > 0 {
+		result = s[:start]
+	}
+	for i := start; i < len(s); i += 3 {
+		if len(result) > 0 {
+			result += ","
+		}
+		result += s[i : i+3]
+	}
+	return result
+}
+
+func historyFormatChange(pct float64) string {
+	prefix := "+"
+	if pct < 0 {
+		prefix = "-"
+		pct = -pct
+	}
+	return prefix + fmt.Sprintf("%.1f", pct) + "%"
+}
+
+func historyFormatR2(r2 float64) string {
+	return fmt.Sprintf("%.3f", r2)
+}

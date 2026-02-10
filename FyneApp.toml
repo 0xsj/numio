@@ -1,0 +1,8 @@
+Website = "https://github.com/0xsj/numio"
+
+[Details]
+  Icon = "Icon.png"
+  Name = "Numio"
+  ID = "com.numio.app"
+  Version = "0.1.0"
+  Build = 1

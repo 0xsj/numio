@@ -1,12 +1,15 @@
 package main
 
 import (
+	"log"
 	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/driver/desktop"
+
+	"github.com/0xsj/numio/pkg/session"
 )
 
 // ════════════════════════════════════════════════════════════════
@@ -18,6 +21,7 @@ type App struct {
 	fyneApp    fyne.App
 	window     fyne.Window
 	editor     *EditorWidget
+	session    *session.Store
 	cursorTick *time.Ticker
 	done       chan struct{}
 }
@@ -42,6 +46,9 @@ func (a *App) Run() {
 
 	// Create editor widget
 	a.editor = NewEditorWidget()
+
+	// Load previous session
+	a.loadSession()
 
 	// Set up layout - no padding for clean look
 	content := container.NewWithoutLayout(a.editor)
@@ -84,10 +91,40 @@ func (a *App) Run() {
 
 // Stop stops the application.
 func (a *App) Stop() {
+	a.saveSession()
 	close(a.done)
 	if a.cursorTick != nil {
 		a.cursorTick.Stop()
 	}
+}
+
+// ════════════════════════════════════════════════════════════════
+// SESSION PERSISTENCE
+// ════════════════════════════════════════════════════════════════
+
+func (a *App) loadSession() {
+	store, err := session.Open(session.DefaultPath())
+	if err != nil {
+		log.Println("session: open failed:", err)
+		return
+	}
+	a.session = store
+
+	if data := store.Load(); data != nil {
+		a.editor.Editor().LoadSession(data)
+		a.editor.updateState()
+	}
+}
+
+func (a *App) saveSession() {
+	if a.session == nil {
+		return
+	}
+	data := a.editor.Editor().SessionData()
+	if err := a.session.Save(data); err != nil {
+		log.Println("session: save failed:", err)
+	}
+	a.session.Close()
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -123,6 +160,20 @@ func (a *App) registerShortcuts() {
 		Modifier: fyne.KeyModifierControl,
 	}, func(_ fyne.Shortcut) {
 		a.editor.ShowExplain()
+	})
+
+	// Cmd+P and Ctrl+P → Price history chart
+	c.AddShortcut(&desktop.CustomShortcut{
+		KeyName:  fyne.KeyP,
+		Modifier: fyne.KeyModifierSuper,
+	}, func(_ fyne.Shortcut) {
+		a.editor.ShowHistory()
+	})
+	c.AddShortcut(&desktop.CustomShortcut{
+		KeyName:  fyne.KeyP,
+		Modifier: fyne.KeyModifierControl,
+	}, func(_ fyne.Shortcut) {
+		a.editor.ShowHistory()
 	})
 
 	// Cmd+K and Ctrl+K → Toggle vim mode

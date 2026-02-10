@@ -3,6 +3,7 @@ package editor
 import (
 	"github.com/0xsj/numio/internal/rpc"
 	"github.com/0xsj/numio/pkg/engine"
+	"github.com/0xsj/numio/pkg/session"
 )
 
 // ════════════════════════════════════════════════════════════════
@@ -792,5 +793,60 @@ func (e *Editor) Clear() {
 
 // MarkClean marks the editor as clean (no unsaved changes).
 func (e *Editor) MarkClean() {
+	e.dirty = false
+}
+
+// ════════════════════════════════════════════════════════════════
+// SESSION PERSISTENCE
+// ════════════════════════════════════════════════════════════════
+
+// SessionData exports the current editor state for persistence.
+func (e *Editor) SessionData() *session.SessionData {
+	return &session.SessionData{
+		Lines:     e.buffer.Lines(),
+		CursorRow: e.cursor.Row(),
+		CursorCol: e.cursor.Col(),
+		Variables: e.engine.Variables(),
+		Results:   e.copyResults(),
+	}
+}
+
+// copyResults returns a shallow copy of the results map.
+func (e *Editor) copyResults() map[int][]rpc.Span {
+	cp := make(map[int][]rpc.Span, len(e.results))
+	for k, v := range e.results {
+		cp[k] = v
+	}
+	return cp
+}
+
+// LoadSession restores editor state from persisted data. It replaces the
+// buffer and cursor, then re-evaluates all lines so the engine rebuilds
+// variables and line history naturally.
+func (e *Editor) LoadSession(data *session.SessionData) {
+	if data == nil || len(data.Lines) == 0 {
+		return
+	}
+
+	e.buffer.ReplaceLines(data.Lines)
+	e.cursor.SetPosition(data.CursorRow, data.CursorCol)
+	e.clampCursorRow()
+	e.clampCursor()
+
+	// Temporarily store persisted results so the UI can render them
+	// immediately (before any async rate fetches finish).
+	e.results = make(map[int][]rpc.Span)
+	for k, v := range data.Results {
+		e.results[k] = v
+	}
+
+	// Replay all lines through the engine to rebuild variables,
+	// previous-result chain, and line history.
+	e.engine.Clear()
+	e.errors = make(map[int]string)
+	for row := 0; row < e.buffer.LineCount(); row++ {
+		e.evaluateLine(row)
+	}
+
 	e.dirty = false
 }

@@ -5,6 +5,7 @@ package tui
 import (
 	"time"
 
+	"github.com/0xsj/numio/internal/fetch"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -48,6 +49,12 @@ type RateStatusClearMsg struct{}
 // SpinnerTickMsg triggers spinner animation update.
 type SpinnerTickMsg struct{}
 
+// HistoryFetchDoneMsg signals that history fetching completed.
+type HistoryFetchDoneMsg struct {
+	Result *fetch.HistoryResult
+	Err    error
+}
+
 // ════════════════════════════════════════════════════════════════
 // COMMANDS
 // ════════════════════════════════════════════════════════════════
@@ -57,6 +64,14 @@ func StartRateFetch(fetchFunc func() (int, error)) tea.Cmd {
 	return func() tea.Msg {
 		count, err := fetchFunc()
 		return RateFetchDoneMsg{Count: count, Err: err}
+	}
+}
+
+// StartHistoryFetch returns a command that fetches price history in the background.
+func StartHistoryFetch(fetchFunc func() (*fetch.HistoryResult, error)) tea.Cmd {
+	return func() tea.Msg {
+		result, err := fetchFunc()
+		return HistoryFetchDoneMsg{Result: result, Err: err}
 	}
 }
 

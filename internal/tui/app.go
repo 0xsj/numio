@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/0xsj/numio/internal/fetch"
+	"github.com/0xsj/numio/internal/graph"
 	"github.com/0xsj/numio/internal/highlight"
 	"github.com/0xsj/numio/internal/tui/keymap"
 	"github.com/0xsj/numio/pkg/engine"
@@ -44,6 +46,18 @@ var (
 	explainInputStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("#79c0ff"))
 	explainStepStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("#888"))
 	explainResultStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#7ee787"))
+
+	// History popup styles
+	historyBorderStyle   = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#ffa657")).Padding(1, 3)
+	historyTitleStyle    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#ffa657"))
+	historyLabelStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("#888"))
+	historyValueStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("#e0e0e0"))
+	historyChangeUp      = lipgloss.NewStyle().Foreground(lipgloss.Color("#7ee787"))
+	historyChangeDown    = lipgloss.NewStyle().Foreground(lipgloss.Color("#f85149"))
+	historySparkStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("#ffa657"))
+	historyHintStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("#666")).Italic(true)
+	historyForecastStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#d2a8ff"))
+	historyForecastDim   = lipgloss.NewStyle().Foreground(lipgloss.Color("#7e57c2"))
 )
 
 // App is the main model
@@ -76,6 +90,13 @@ type App struct {
 	// Rate fetch status
 	rateStatus   RateStatusInfo
 	spinnerFrame int
+
+	// History popup
+	showHistory    bool
+	historyResult  *fetch.HistoryResult
+	historyRange   fetch.HistoryRange
+	historyLoading bool
+	historyError   string
 }
 
 // editorState for undo/redo
@@ -180,7 +201,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Rate fetch messages
 	case SpinnerTickMsg:
-		if a.rateStatus.Status == RateStatusFetching {
+		if a.rateStatus.Status == RateStatusFetching || a.historyLoading {
 			a.spinnerFrame++
 			return a, SpinnerTick()
 		}
@@ -210,6 +231,17 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				UpdatedAt: a.rateStatus.UpdatedAt,
 			}
 		}
+
+	case HistoryFetchDoneMsg:
+		a.historyLoading = false
+		if msg.Err != nil {
+			a.historyError = msg.Err.Error()
+			a.historyResult = nil
+		} else {
+			a.historyResult = msg.Result
+			a.historyError = ""
+		}
+		a.showHistory = true
 	}
 
 	return a, nil
@@ -240,10 +272,45 @@ func (a *App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return a, nil
 	}
 
+	// History popup: consume ALL keys while showing (never leak to editor)
+	if a.showHistory {
+		if !a.historyLoading {
+			switch key {
+			case "ctrl+p", "right", "l":
+				a.historyRange = a.historyRange.Next()
+				return a.triggerHistory()
+			case "left", "h":
+				a.historyRange = a.historyRange.Prev()
+				return a.triggerHistory()
+			case "1", "2", "3", "4":
+				if r, ok := fetch.RangeFromKey(key); ok {
+					a.historyRange = r
+					return a.triggerHistory()
+				}
+				// invalid key — close
+				a.showHistory = false
+				a.historyResult = nil
+				a.historyError = ""
+			default:
+				// Any other key closes
+				a.showHistory = false
+				a.historyResult = nil
+				a.historyError = ""
+			}
+		}
+		// Always consume the key — don't pass to editor
+		return a, nil
+	}
+
 	// Handle Ctrl+E to show explanation
 	if key == "ctrl+e" {
 		a.triggerExplain()
 		return a, nil
+	}
+
+	// Handle Ctrl+P to show price history
+	if key == "ctrl+p" {
+		return a.handleHistoryToggle()
 	}
 
 	// Handle Ctrl+R to refresh rates
@@ -307,6 +374,81 @@ func (a *App) triggerExplain() {
 	// Get explanation
 	a.lastExplain = a.engine.Explain(line)
 	a.showExplain = true
+}
+
+// handleHistoryToggle opens the history popup or cycles range if already open.
+func (a *App) handleHistoryToggle() (tea.Model, tea.Cmd) {
+	if a.showHistory && !a.historyLoading {
+		// Cycle to next range
+		a.historyRange = a.historyRange.Next()
+		return a.triggerHistory()
+	}
+
+	// Fresh open — detect asset from current/previous line
+	a.historyRange = fetch.HistoryRange7d
+	return a.triggerHistory()
+}
+
+// triggerHistory starts fetching price history for the current line's asset.
+func (a *App) triggerHistory() (tea.Model, tea.Cmd) {
+	a.ensureRowExists()
+
+	// Find a non-empty line to evaluate
+	line := strings.TrimSpace(a.lines[a.row])
+	if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, "//") {
+		for i := a.row - 1; i >= 0; i-- {
+			candidate := strings.TrimSpace(a.lines[i])
+			if candidate != "" && !strings.HasPrefix(candidate, "#") && !strings.HasPrefix(candidate, "//") {
+				line = candidate
+				break
+			}
+		}
+	}
+
+	if line == "" {
+		a.showHistory = true
+		a.historyError = "No chartable asset on this line"
+		a.historyResult = nil
+		return a, nil
+	}
+
+	// Evaluate the line to detect the asset (with text scanning fallback)
+	result := a.engine.Eval(line)
+	code, kind, ok := fetch.DetectAssetFromLine(result, line)
+	if !ok {
+		a.showHistory = true
+		a.historyError = "No chartable asset on this line"
+		a.historyResult = nil
+		return a, nil
+	}
+
+	// Edge cases
+	if kind == fetch.AssetKindMetal {
+		a.showHistory = true
+		a.historyError = "Historical charts not yet available for metals"
+		a.historyResult = nil
+		return a, nil
+	}
+	if kind == fetch.AssetKindFiat && strings.ToUpper(code) == "USD" {
+		a.showHistory = true
+		a.historyError = "USD is the base currency"
+		a.historyResult = nil
+		return a, nil
+	}
+
+	a.historyLoading = true
+	a.historyError = ""
+	a.showHistory = true
+
+	hr := a.historyRange
+	return a, tea.Batch(
+		SpinnerTick(),
+		StartHistoryFetch(func() (*fetch.HistoryResult, error) {
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer cancel()
+			return fetch.FetchHistory(ctx, code, kind, hr)
+		}),
+	)
 }
 
 func (a *App) handleInsertKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -1112,6 +1254,10 @@ func (a *App) View() string {
 		return a.renderExplain()
 	}
 
+	if a.showHistory {
+		return a.renderHistory()
+	}
+
 	var b strings.Builder
 
 	contentHeight := a.height - 2
@@ -1231,6 +1377,144 @@ func (a *App) renderExplain() string {
 	return lipgloss.Place(a.width, a.height, lipgloss.Center, lipgloss.Center, explainBox)
 }
 
+func (a *App) renderHistory() string {
+	var content strings.Builder
+
+	if a.historyLoading {
+		frame := SpinnerFrames[a.spinnerFrame%len(SpinnerFrames)]
+		content.WriteString(historyTitleStyle.Render("Price Chart"))
+		content.WriteString("\n\n")
+		content.WriteString(frame + " Fetching price history...")
+		content.WriteString("\n")
+
+		historyBox := historyBorderStyle.Render(content.String())
+		return lipgloss.Place(a.width, a.height, lipgloss.Center, lipgloss.Center, historyBox)
+	}
+
+	if a.historyError != "" {
+		content.WriteString(historyTitleStyle.Render("Price Chart"))
+		content.WriteString("\n\n")
+		content.WriteString(errorStyle.Render(a.historyError))
+		content.WriteString("\n")
+		content.WriteString(historyHintStyle.Render("\nPress any key to close"))
+
+		historyBox := historyBorderStyle.Render(content.String())
+		return lipgloss.Place(a.width, a.height, lipgloss.Center, lipgloss.Center, historyBox)
+	}
+
+	if a.historyResult == nil {
+		return a.View()
+	}
+
+	hr := a.historyResult
+	prices := hr.Prices()
+	stats := graph.ComputeStats(prices)
+
+	// Title
+	title := hr.Asset + "/" + hr.Base + " Price Chart"
+	content.WriteString(historyTitleStyle.Render(title))
+	content.WriteString("\n")
+
+	// Range selector: [1:7d] [2:30d] [3:90d] [4:1y]
+	rangeLabels := []struct {
+		key   string
+		label string
+		r     fetch.HistoryRange
+	}{
+		{"1", "7d", fetch.HistoryRange7d},
+		{"2", "30d", fetch.HistoryRange30d},
+		{"3", "90d", fetch.HistoryRange90d},
+		{"4", "1y", fetch.HistoryRange1y},
+	}
+	content.WriteString("  ")
+	for _, rl := range rangeLabels {
+		if rl.r == hr.Range {
+			content.WriteString(historyTitleStyle.Render("[" + rl.key + ":" + rl.label + "]"))
+		} else {
+			content.WriteString(historyHintStyle.Render(" " + rl.key + ":" + rl.label + " "))
+		}
+	}
+	content.WriteString("\n\n")
+
+	// Sparkline with forecast extension
+	forecast := fetch.LinearForecast(prices)
+	sparkWidth := 44
+	forecastWidth := 0
+	if forecast != nil {
+		forecastWidth = len(forecast.Points)
+		if forecastWidth > 8 {
+			forecastWidth = 8
+		}
+	}
+
+	sparkline := graph.SparklineFixed(prices, sparkWidth)
+	content.WriteString("  " + historySparkStyle.Render(sparkline))
+	if forecast != nil && forecastWidth > 0 {
+		// Render forecast sparkline with different color using combined bounds
+		allPrices := append(prices, forecast.Points[:forecastWidth]...)
+		fStats := graph.ComputeStats(allPrices)
+		forecastSpark := graph.SparklineBounded(forecast.Points[:forecastWidth], fStats.Min, fStats.Max)
+		content.WriteString(historyForecastDim.Render("╎"))
+		content.WriteString(historyForecastStyle.Render(forecastSpark))
+	}
+	content.WriteString(" " + stats.Trend.Symbol())
+	content.WriteString("\n")
+	if forecast != nil {
+		content.WriteString(historyHintStyle.Render("  " + padRight("historical", sparkWidth) + " forecast"))
+		content.WriteString("\n")
+	}
+	content.WriteString("\n")
+
+	// Stats
+	open := formatPrice(stats.First)
+	close_ := formatPrice(stats.Last)
+	high := formatPrice(stats.Max)
+	low := formatPrice(stats.Min)
+	avg := formatPrice(stats.Avg)
+
+	// Change with color
+	changeStr := formatChange(stats.Change)
+	var changeStyled string
+	if stats.Change >= 0 {
+		changeStyled = historyChangeUp.Render(changeStr)
+	} else {
+		changeStyled = historyChangeDown.Render(changeStr)
+	}
+
+	content.WriteString(historyLabelStyle.Render("  Open:   ") + historyValueStyle.Render(padRight(open, 12)) + historyLabelStyle.Render("High:  ") + historyValueStyle.Render(high))
+	content.WriteString("\n")
+	content.WriteString(historyLabelStyle.Render("  Close:  ") + historyValueStyle.Render(padRight(close_, 12)) + historyLabelStyle.Render("Low:   ") + historyValueStyle.Render(low))
+	content.WriteString("\n")
+	content.WriteString(historyLabelStyle.Render("  Change: ") + padRight(changeStyled, 12+10) + historyLabelStyle.Render("Avg:   ") + historyValueStyle.Render(avg))
+	content.WriteString("\n")
+
+	// Forecast section
+	if forecast != nil {
+		content.WriteString("\n")
+		content.WriteString(historyForecastStyle.Render("  Forecast (" + forecast.Label + ")"))
+		content.WriteString("\n")
+		targetStr := formatPrice(forecast.Target)
+		var fcChangeStyled string
+		fcChangeStr := formatChange(forecast.ChangePct)
+		if forecast.ChangePct >= 0 {
+			fcChangeStyled = historyChangeUp.Render(fcChangeStr)
+		} else {
+			fcChangeStyled = historyChangeDown.Render(fcChangeStr)
+		}
+		content.WriteString(historyLabelStyle.Render("  Target: ") + historyValueStyle.Render(padRight(targetStr, 12)))
+		content.WriteString(fcChangeStyled)
+		content.WriteString(historyLabelStyle.Render("  R²: "))
+		content.WriteString(historyValueStyle.Render(formatR2(forecast.RSquared)))
+		content.WriteString(historyLabelStyle.Render(" (" + forecast.Confidence() + ")"))
+		content.WriteString("\n")
+	}
+
+	content.WriteString(historyHintStyle.Render("\n  1-4 select · ←/→ cycle · any key to close"))
+
+	historyBox := historyBorderStyle.Render(content.String())
+	return lipgloss.Place(a.width, a.height, lipgloss.Center, lipgloss.Center, historyBox)
+}
+
 func (a *App) renderHelp() string {
 	var content strings.Builder
 
@@ -1269,6 +1553,7 @@ func (a *App) renderHelp() string {
 	content.WriteString(helpKeyStyle.Render("Esc") + helpDescStyle.Render("Normal mode") + "\n")
 	content.WriteString(helpKeyStyle.Render("?") + helpDescStyle.Render("Toggle help") + "\n")
 	content.WriteString(helpKeyStyle.Render("Ctrl+e") + helpDescStyle.Render("Explain calculation") + "\n")
+	content.WriteString(helpKeyStyle.Render("Ctrl+p") + helpDescStyle.Render("Price chart") + "\n")
 	content.WriteString(helpKeyStyle.Render("Ctrl+r") + helpDescStyle.Render("Refresh rates") + "\n")
 	content.WriteString(helpKeyStyle.Render("q") + helpDescStyle.Render("Quit") + "\n")
 	content.WriteString(helpKeyStyle.Render("Ctrl+C") + helpDescStyle.Render("Force quit") + "\n")
@@ -1389,7 +1674,7 @@ func (a *App) renderStatusBar() string {
 		modeStr += " " + pendingStyle.Render(pending)
 	}
 
-	hint := lipgloss.NewStyle().Foreground(lipgloss.Color("#666")).Render("  ? help  ^e explain  ^r rates")
+	hint := lipgloss.NewStyle().Foreground(lipgloss.Color("#666")).Render("  ? help  ^e explain  ^p chart  ^r rates")
 
 	pos := fmt.Sprintf("%d:%d", a.row+1, a.col+1)
 
@@ -1434,6 +1719,121 @@ func (a *App) renderRateStatus() string {
 	}
 
 	return style.Render(statusText) + "  "
+}
+
+// ════════════════════════════════════════════════════════════════
+// HISTORY HELPERS
+// ════════════════════════════════════════════════════════════════
+
+// formatPrice formats a price for display in the history popup.
+func formatPrice(n float64) string {
+	if n == 0 {
+		return "0"
+	}
+
+	// Handle negative
+	prefix := ""
+	if n < 0 {
+		prefix = "-"
+		n = -n
+	}
+
+	// Determine decimals based on magnitude
+	var decimals int
+	if n >= 1000 {
+		decimals = 0
+	} else if n >= 1 {
+		decimals = 2
+	} else if n >= 0.01 {
+		decimals = 4
+	} else {
+		decimals = 6
+	}
+
+	// Format with comma separators for large numbers
+	intPart := int64(n)
+	fracPart := n - float64(intPart)
+
+	intStr := formatIntWithCommas(intPart)
+
+	if decimals == 0 {
+		return prefix + intStr
+	}
+
+	// Build decimal part
+	mul := 1.0
+	for i := 0; i < decimals; i++ {
+		mul *= 10
+	}
+	frac := int64(fracPart * mul)
+	fracStr := intToStr(int(frac))
+	for len(fracStr) < decimals {
+		fracStr = "0" + fracStr
+	}
+
+	// Trim trailing zeros
+	fracStr = strings.TrimRight(fracStr, "0")
+	if fracStr == "" {
+		return prefix + intStr
+	}
+
+	return prefix + intStr + "." + fracStr
+}
+
+// formatIntWithCommas formats an integer with comma separators.
+func formatIntWithCommas(n int64) string {
+	s := intToStr(int(n))
+	if len(s) <= 3 {
+		return s
+	}
+
+	var result strings.Builder
+	start := len(s) % 3
+	if start > 0 {
+		result.WriteString(s[:start])
+	}
+	for i := start; i < len(s); i += 3 {
+		if result.Len() > 0 {
+			result.WriteByte(',')
+		}
+		result.WriteString(s[i : i+3])
+	}
+	return result.String()
+}
+
+// formatChange formats a percentage change like "+12.0%" or "-5.3%".
+func formatChange(pct float64) string {
+	prefix := "+"
+	neg := pct < 0
+	if neg {
+		prefix = "-"
+		pct = -pct
+	}
+
+	intPart := int(pct)
+	fracPart := int((pct - float64(intPart)) * 10)
+
+	return prefix + intToStr(intPart) + "." + intToStr(fracPart) + "%"
+}
+
+// formatR2 formats the R² coefficient (0..1) with 2 decimal places.
+func formatR2(r2 float64) string {
+	intPart := int(r2)
+	fracPart := int((r2 - float64(intPart)) * 100)
+	frac := intToStr(fracPart)
+	if len(frac) < 2 {
+		frac = "0" + frac
+	}
+	return intToStr(intPart) + "." + frac
+}
+
+// padRight pads a string to a minimum width with spaces.
+func padRight(s string, width int) string {
+	w := lipgloss.Width(s)
+	if w >= width {
+		return s
+	}
+	return s + strings.Repeat(" ", width-w)
 }
 
 // ════════════════════════════════════════════════════════════════

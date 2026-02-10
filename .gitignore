@@ -1,0 +1,24 @@
+# Build output
+/bin/
+/tmp/
+
+# macOS app bundle & installer
+Numio.app/
+*.dmg
+
+# Coverage
+coverage.out
+coverage.html
+
+# OS files
+.DS_Store
+
+# Air hot reload
+/tmp/
+
+# Go
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib

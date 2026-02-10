@@ -68,9 +68,9 @@ repl:
 # BUILD
 # ════════════════════════════════════════════════════════════════
 
-## build: Build both TUI and CLI binaries
+## build: Build TUI, CLI, and desktop binaries
 .PHONY: build
-build: build-tui build-cli
+build: build-tui build-cli build-desktop
 
 ## build-tui: Build TUI binary
 .PHONY: build-tui
@@ -85,6 +85,25 @@ build-cli:
 	@echo "Building $(CLI_BIN)..."
 	@mkdir -p $(BUILD_DIR)
 	@$(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS) $(LDFLAGS_VERSION)" -o $(BUILD_DIR)/$(CLI_BIN) $(CMD_DIR)/$(CLI_BIN)
+
+## build-desktop: Build desktop binary
+.PHONY: build-desktop
+build-desktop:
+	@echo "Building numio-desktop..."
+	@mkdir -p $(BUILD_DIR)
+	@$(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS) $(LDFLAGS_VERSION)" -o $(BUILD_DIR)/numio-desktop $(CMD_DIR)/numio-desktop
+
+## desktop: Run desktop app directly
+.PHONY: desktop
+desktop:
+	@$(GO) run $(CMD_DIR)/numio-desktop
+
+## package-desktop: Package desktop app as macOS .app bundle
+.PHONY: package-desktop
+package-desktop:
+	@echo "Packaging Numio.app..."
+	@fyne package -os darwin -icon $(CURDIR)/Icon.png -name Numio --id com.numio.app --src ./cmd/numio-desktop
+	@echo "Done → Numio.app"
 
 ## build-release: Build optimized release binaries
 .PHONY: build-release
@@ -212,6 +231,7 @@ tools:
 	@echo "Installing development tools..."
 	@go install github.com/air-verse/air@latest
 	@go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+	@go install fyne.io/tools/cmd/fyne@latest
 	@echo "Tools installed."
 
 ## tools-check: Check if required tools are installed

@@ -112,6 +112,19 @@ var (
 	ColorPopupKey        = color.RGBA{R: 180, G: 150, B: 220, A: 255}
 	ColorPopupDesc       = color.RGBA{R: 180, G: 180, B: 180, A: 255}
 	ColorPopupHint       = color.RGBA{R: 120, G: 120, B: 120, A: 255}
+
+	// Chart popup colors
+	ColorChartBorder       = color.RGBA{R: 255, G: 166, B: 87, A: 255}  // Warm amber border
+	ColorChartRangeActive  = color.RGBA{R: 255, G: 200, B: 120, A: 255} // Bright gold for active range
+	ColorChartRangeDim     = color.RGBA{R: 100, G: 100, B: 110, A: 255} // Dim for inactive range
+	ColorChartSparkline    = color.RGBA{R: 255, G: 200, B: 120, A: 255} // Gold for historical sparkline
+	ColorChartForecast     = color.RGBA{R: 210, G: 168, B: 255, A: 255} // Purple for forecast sparkline
+	ColorChartForecastDim  = color.RGBA{R: 126, G: 87, B: 194, A: 255}  // Dim purple for separator
+	ColorChartLabel        = color.RGBA{R: 140, G: 140, B: 150, A: 255} // Muted labels
+	ColorChartValue        = color.RGBA{R: 220, G: 220, B: 230, A: 255} // Bright values
+	ColorChartChangeUp     = color.RGBA{R: 126, G: 231, B: 135, A: 255} // Green for positive
+	ColorChartChangeDown   = color.RGBA{R: 248, G: 81, B: 73, A: 255}   // Red for negative
+	ColorChartForecastHead = color.RGBA{R: 210, G: 168, B: 255, A: 255} // Purple heading
 )
 
 // ════════════════════════════════════════════════════════════════
