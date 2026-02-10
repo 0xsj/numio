@@ -192,10 +192,10 @@ func (e *Editor) MoveUp(n int) {
 	e.ensureCursorVisible()
 }
 
-// MoveDown moves the cursor down.
+// MoveDown moves the cursor down, expanding the buffer if needed.
 func (e *Editor) MoveDown(n int) {
 	e.cursor.MoveDown(n)
-	e.clampCursorRow()
+	e.buffer.EnsureLines(e.cursor.Row())
 	lineLen := e.buffer.LineLength(e.cursor.Row())
 	e.cursor.ApplyPreferredCol(lineLen, e.mode == ModeInsert)
 	e.updateSelection()
@@ -311,6 +311,7 @@ func (e *Editor) MoveToLine(lineNum int) {
 func (e *Editor) InsertChar(ch rune) {
 	e.saveUndo()
 	row, col := e.cursor.Position()
+	e.buffer.EnsureLines(row)
 	e.buffer.InsertChar(row, col, ch)
 	e.cursor.MoveRight(1)
 	e.dirty = true
@@ -325,6 +326,7 @@ func (e *Editor) InsertString(s string) {
 	}
 	e.saveUndo()
 	row, col := e.cursor.Position()
+	e.buffer.EnsureLines(row)
 	e.buffer.InsertString(row, col, s)
 	e.cursor.SetCol(col + len(s))
 	e.dirty = true
@@ -336,6 +338,7 @@ func (e *Editor) InsertString(s string) {
 func (e *Editor) InsertNewline() {
 	e.saveUndo()
 	row, col := e.cursor.Position()
+	e.buffer.EnsureLines(row)
 	e.buffer.SplitLine(row, col)
 	e.cursor.SetPosition(row+1, 0)
 	e.dirty = true

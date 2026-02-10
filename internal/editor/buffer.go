@@ -95,6 +95,14 @@ func (b *Buffer) LastRow() int {
 	return len(b.lines) - 1
 }
 
+// EnsureLines grows the buffer so that the given row index exists.
+// Any new lines are empty strings.
+func (b *Buffer) EnsureLines(row int) {
+	for row >= len(b.lines) {
+		b.lines = append(b.lines, "")
+	}
+}
+
 // ════════════════════════════════════════════════════════════════
 // CHARACTER OPERATIONS
 // ════════════════════════════════════════════════════════════════

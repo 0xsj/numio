@@ -153,6 +153,9 @@ type RenderLine struct {
 	// Number is the 1-based line number
 	Number int `json:"number"`
 
+	// RelativeNumber is the distance from the cursor line (0 = cursor line)
+	RelativeNumber int `json:"relativeNumber"`
+
 	// Input contains the styled input spans
 	Input []Span `json:"input"`
 

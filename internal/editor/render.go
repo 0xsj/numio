@@ -94,9 +94,18 @@ func (r *Renderer) renderLine(row int, params RenderParams) rpc.RenderLine {
 	content := params.Buffer.Line(row)
 	isCurrentLine := params.Cursor != nil && params.Cursor.Row() == row
 
+	relNum := row
+	if params.Cursor != nil {
+		relNum = row - params.Cursor.Row()
+		if relNum < 0 {
+			relNum = -relNum
+		}
+	}
+
 	renderLine := rpc.RenderLine{
-		Number:        row + 1, // 1-based for display
-		IsCurrentLine: isCurrentLine,
+		Number:         row + 1, // 1-based for display
+		RelativeNumber: relNum,
+		IsCurrentLine:  isCurrentLine,
 	}
 
 	// Render input with syntax highlighting and selection

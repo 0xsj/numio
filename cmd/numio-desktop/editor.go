@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"image/color"
+	"strings"
 	"sync"
 	"time"
 
@@ -13,6 +15,18 @@ import (
 
 	"github.com/0xsj/numio/internal/editor"
 	"github.com/0xsj/numio/internal/rpc"
+	"github.com/0xsj/numio/internal/tui/keymap"
+)
+
+// ════════════════════════════════════════════════════════════════
+// DESKTOP-SPECIFIC ACTIONS
+// ════════════════════════════════════════════════════════════════
+
+// Actions not in the shared keymap defaults but needed for desktop vim.
+const (
+	actionInsertLineStart keymap.Action = "insert_line_start"
+	actionInsertLineEnd   keymap.Action = "insert_line_end"
+	actionVisualLineMode  keymap.Action = "visual_line_mode"
 )
 
 // ════════════════════════════════════════════════════════════════
@@ -47,6 +61,7 @@ type EditorWidget struct {
 	topPadding      float32
 	statusBarHeight float32
 	lineSpacing     float32
+	lineNumWidth    float32
 
 	// Cursor blink state
 	cursorVisible bool
@@ -61,12 +76,22 @@ type EditorWidget struct {
 	activePopup   PopupType
 	explainResult string
 
-	// Vim mode toggle
+	// Vim mode toggle (default: true)
 	vimMode bool
+
+	// Keymap for vim bindings
+	km *keymap.KeyMap
 }
 
 // NewEditorWidget creates a new editor widget.
 func NewEditorWidget() *EditorWidget {
+	km := keymap.Default()
+
+	// Add desktop-specific bindings not in shared defaults
+	km.Normal.Bind("I", actionInsertLineStart)
+	km.Normal.Bind("A", actionInsertLineEnd)
+	km.Normal.Bind("V", actionVisualLineMode)
+
 	w := &EditorWidget{
 		editor:          editor.NewEditor(),
 		lineHeight:      24,
@@ -76,13 +101,14 @@ func NewEditorWidget() *EditorWidget {
 		topPadding:      16,
 		statusBarHeight: 28,
 		lineSpacing:     4,
+		lineNumWidth:    8.4 * 4, // 4 characters wide
 		cursorVisible:   true,
 		activePopup:     PopupNone,
-		vimMode:         false, // Default: normal editor mode
+		vimMode:         true, // Default: vim mode ON
+		km:              km,
 	}
 
-	// Start in insert mode when vim mode is off
-	w.editor.EnterInsertMode()
+	// Editor starts in ModeNormal by default — synced with keymap
 
 	w.ExtendBaseWidget(w)
 	w.updateState()
@@ -104,9 +130,12 @@ func NewEditorWidget() *EditorWidget {
 // SetVimMode enables or disables vim keybindings.
 func (w *EditorWidget) SetVimMode(enabled bool) {
 	w.vimMode = enabled
-	if !enabled {
-		// Always stay in insert mode when vim mode is off
+	if enabled {
+		w.editor.EnterNormalMode()
+		w.km.SetMode(keymap.ModeNormal)
+	} else {
 		w.editor.EnterInsertMode()
+		w.km.SetMode(keymap.ModeInsert)
 	}
 	w.updateState()
 	w.Refresh()
@@ -140,8 +169,12 @@ func (w *EditorWidget) MinSize() fyne.Size {
 func (w *EditorWidget) Resize(size fyne.Size) {
 	w.BaseWidget.Resize(size)
 
-	// Calculate viewport size in characters
-	cols := int((size.Width - w.leftPadding - w.rightPadding) / w.charWidth)
+	// Calculate viewport size in characters (subtract line number gutter in vim mode)
+	gutterWidth := float32(0)
+	if w.vimMode {
+		gutterWidth = w.lineNumWidth
+	}
+	cols := int((size.Width - w.leftPadding - gutterWidth - w.rightPadding) / w.charWidth)
 	rows := int((size.Height - w.topPadding*2 - w.statusBarHeight) / (w.lineHeight + w.lineSpacing))
 
 	if cols < 1 {
@@ -185,14 +218,15 @@ func (w *EditorWidget) TypedRune(r rune) {
 	w.mu.Lock()
 
 	if w.vimMode {
-		// Vim mode: handle based on current mode
 		if w.editor.Mode() == editor.ModeInsert {
+			// Insert mode: type characters directly
 			w.editor.InsertChar(r)
 		} else {
-			w.processVimKey(KeyEvent{Key: string(r)})
+			// Normal/Visual: feed to keymap
+			w.processVimKeymapKey(string(r))
 		}
 	} else {
-		// Normal editor mode: always insert
+		// Simple editor mode: always insert
 		w.editor.InsertChar(r)
 	}
 
@@ -223,22 +257,41 @@ func (w *EditorWidget) TypedKey(ev *fyne.KeyEvent) {
 		return
 	}
 
-	key := translateKey(ev.Name)
-
 	w.mu.Lock()
 
-	// Skip if it's a regular character (handled by TypedRune)
-	if len(key) == 1 && key[0] >= 32 && key[0] < 127 {
-		w.mu.Unlock()
-		return
-	}
-
 	if w.vimMode {
-		w.processVimKey(KeyEvent{
-			Key:       key,
-			Modifiers: w.currentModifiers(),
-		})
+		// Build keymap-compatible key string
+		keymapKey := translateKeyForKeymap(ev.Name)
+
+		// Handle Ctrl + letter (Fyne sends TypedKey, not TypedRune, when Ctrl held)
+		if keymapKey == "" && w.ctrlPressed {
+			letter := strings.ToLower(string(ev.Name))
+			if len(letter) == 1 && letter[0] >= 'a' && letter[0] <= 'z' {
+				keymapKey = "ctrl+" + letter
+			}
+		}
+
+		if keymapKey == "" {
+			// Regular character — handled by TypedRune
+			w.mu.Unlock()
+			return
+		}
+
+		// Add ctrl prefix for special keys when ctrl is held
+		if w.ctrlPressed && !strings.HasPrefix(keymapKey, "ctrl+") {
+			keymapKey = "ctrl+" + keymapKey
+		}
+
+		w.processVimKeymapKey(keymapKey)
 	} else {
+		key := translateKey(ev.Name)
+
+		// Skip regular characters (handled by TypedRune)
+		if len(key) == 1 && key[0] >= 32 && key[0] < 127 {
+			w.mu.Unlock()
+			return
+		}
+
 		w.processNormalEditorKey(key)
 	}
 
@@ -296,7 +349,7 @@ func (w *EditorWidget) ToggleHelp() {
 }
 
 // ════════════════════════════════════════════════════════════════
-// NORMAL EDITOR KEY HANDLING (non-vim)
+// SIMPLE EDITOR KEY HANDLING (non-vim)
 // ════════════════════════════════════════════════════════════════
 
 func (w *EditorWidget) processNormalEditorKey(key string) {
@@ -325,184 +378,328 @@ func (w *EditorWidget) processNormalEditorKey(key string) {
 }
 
 // ════════════════════════════════════════════════════════════════
-// VIM KEY HANDLING
+// VIM KEYMAP PROCESSING
 // ════════════════════════════════════════════════════════════════
 
-func (w *EditorWidget) currentModifiers() []string {
-	mods := make([]string, 0, 4)
-	if w.ctrlPressed {
-		mods = append(mods, "ctrl")
+// processVimKeymapKey feeds a key through the keymap and dispatches the result.
+// This replaces the old hand-rolled processVimKey / processVimNormalModeKey / etc.
+func (w *EditorWidget) processVimKeymapKey(key string) {
+	km := w.km
+	key = keymap.NormalizeKey(key)
+
+	// Handle digit for count (but not '0' at start which is line start)
+	if len(key) == 1 && key[0] >= '0' && key[0] <= '9' {
+		if km.State.AddDigit(rune(key[0])) {
+			return
+		}
 	}
-	if w.altPressed {
-		mods = append(mods, "alt")
+
+	// Add key to buffer
+	km.State.AddKey(key)
+
+	// Determine which binding map to use
+	mode := km.CurrentMode
+	if km.State.HasPendingOperator() {
+		mode = keymap.ModeOperatorPending
 	}
-	if w.shiftPressed {
-		mods = append(mods, "shift")
+
+	result := km.GetBindingMap(mode).Lookup(km.State.KeyBuffer)
+
+	switch result.Status {
+	case keymap.LookupFound:
+		w.handleKeymapAction(result.Action)
+
+	case keymap.LookupPending:
+		if result.Action != keymap.ActionNone {
+			w.handleKeymapAction(result.Action)
+		}
+		// else: partial sequence, wait for more keys
+
+	case keymap.LookupPartialMatch:
+		// waiting for more keys
+
+	case keymap.LookupNotFound:
+		km.State.Reset()
 	}
-	if w.superPressed {
-		mods = append(mods, "cmd")
-	}
-	return mods
 }
 
-func (w *EditorWidget) processVimKey(ev KeyEvent) {
-	mode := w.editor.Mode()
-
-	switch mode {
-	case editor.ModeNormal:
-		w.processVimNormalModeKey(ev)
-	case editor.ModeInsert:
-		w.processVimInsertModeKey(ev)
-	case editor.ModeVisual:
-		w.processVimVisualModeKey(ev)
+// handleKeymapAction processes a resolved action, managing operator-pending state.
+func (w *EditorWidget) handleKeymapAction(action keymap.Action) {
+	km := w.km
+	count := km.State.GetCount()
+	if count < 1 {
+		count = 1
 	}
+
+	// In visual mode, operators act on the selection immediately
+	if action.IsOperator() && km.CurrentMode == keymap.ModeVisual {
+		cmd := keymap.NewCommand(action, count)
+		km.State.Reset()
+		w.executeCommand(cmd)
+		return
+	}
+
+	// Starting a new operator (d, y, c) — enter operator-pending mode
+	if action.IsOperator() && !km.State.HasPendingOperator() {
+		km.State.SetOperator(action)
+		km.State.ClearKeyBuffer()
+		return // wait for motion
+	}
+
+	// Completing an operator with a motion
+	if km.State.HasPendingOperator() {
+		cmd := keymap.NewOperatorCommand(km.State.PendingOperator, count, action, 1)
+		km.State.Reset()
+		w.executeCommand(cmd)
+		return
+	}
+
+	// Simple command
+	cmd := keymap.NewCommand(action, count)
+	km.State.Reset()
+	w.executeCommand(cmd)
 }
 
-func (w *EditorWidget) processVimNormalModeKey(ev KeyEvent) {
-	key := ev.Key
+// ════════════════════════════════════════════════════════════════
+// COMMAND DISPATCH
+// ════════════════════════════════════════════════════════════════
 
-	switch key {
-	// Help & Explain (also available via Cmd+/)
-	case "?":
+// executeCommand dispatches a keymap Command to the editor.
+func (w *EditorWidget) executeCommand(cmd keymap.Command) {
+	if cmd.Action == keymap.ActionNone {
+		return
+	}
+
+	ed := w.editor
+	count := cmd.Count
+	if count < 1 {
+		count = 1
+	}
+
+	// Operator + motion commands
+	if cmd.Motion != keymap.ActionNone {
+		w.executeOperatorMotion(cmd)
+		w.syncModeToKeymap()
+		return
+	}
+
+	switch cmd.Action {
+	// ── Mode switching ──────────────────────────────────────────
+	case keymap.ActionInsertMode:
+		ed.EnterInsertMode()
+	case keymap.ActionAppendMode:
+		ed.EnterInsertModeAppend()
+	case actionInsertLineStart:
+		ed.EnterInsertModeLineStart()
+	case actionInsertLineEnd:
+		ed.EnterInsertModeLineEnd()
+	case keymap.ActionNormalMode:
+		ed.EnterNormalMode()
+	case keymap.ActionVisualMode:
+		ed.EnterVisualMode()
+	case actionVisualLineMode:
+		ed.EnterVisualLineMode()
+
+	// ── Movement ────────────────────────────────────────────────
+	case keymap.ActionMoveUp:
+		ed.MoveUp(count)
+	case keymap.ActionMoveDown:
+		ed.MoveDown(count)
+	case keymap.ActionMoveLeft:
+		ed.MoveLeft(count)
+	case keymap.ActionMoveRight:
+		ed.MoveRight(count)
+	case keymap.ActionMoveWordNext:
+		ed.MoveWordForward(count)
+	case keymap.ActionMoveWordPrev:
+		ed.MoveWordBackward(count)
+	case keymap.ActionGotoLineStart:
+		ed.MoveToLineStart()
+	case keymap.ActionGotoLineEnd:
+		ed.MoveToLineEnd()
+	case keymap.ActionGotoTop:
+		ed.MoveToTop()
+	case keymap.ActionGotoBottom:
+		ed.MoveToBottom()
+	case keymap.ActionPageUp:
+		ed.MoveUp(ed.Viewport().Height())
+	case keymap.ActionPageDown:
+		ed.MoveDown(ed.Viewport().Height())
+
+	// ── Editing ─────────────────────────────────────────────────
+	case keymap.ActionDeleteChar:
+		for i := 0; i < count; i++ {
+			ed.DeleteChar()
+		}
+	case keymap.ActionDeleteCharBack:
+		for i := 0; i < count; i++ {
+			ed.DeleteCharBack()
+		}
+	case keymap.ActionDeleteLine:
+		for i := 0; i < count; i++ {
+			ed.DeleteLine()
+		}
+	case keymap.ActionDeleteToEnd:
+		ed.DeleteToLineEnd()
+	case keymap.ActionYankLine:
+		ed.YankLine()
+	case keymap.ActionPaste:
+		for i := 0; i < count; i++ {
+			ed.Paste()
+		}
+	case keymap.ActionPasteAbove:
+		for i := 0; i < count; i++ {
+			ed.PasteBefore()
+		}
+	case keymap.ActionUndo:
+		for i := 0; i < count; i++ {
+			ed.Undo()
+		}
+	case keymap.ActionRedo:
+		for i := 0; i < count; i++ {
+			ed.Redo()
+		}
+	case keymap.ActionJoinLines:
+		for i := 0; i < count; i++ {
+			ed.JoinLines()
+		}
+
+	// ── Line operations ─────────────────────────────────────────
+	case keymap.ActionOpenBelow:
+		ed.OpenLineBelow()
+	case keymap.ActionOpenAbove:
+		ed.OpenLineAbove()
+
+	// ── Insert mode editing ─────────────────────────────────────
+	case keymap.ActionBackspace:
+		ed.DeleteCharBack()
+	case keymap.ActionDelete:
+		ed.DeleteChar()
+	case keymap.ActionInsertNewline:
+		ed.InsertNewline()
+	case keymap.ActionInsertTab:
+		ed.InsertString("  ")
+
+	// ── Visual mode operators ───────────────────────────────────
+	case keymap.ActionOperatorDelete:
+		ed.YankSelection()
+		ed.EnterNormalMode()
+	case keymap.ActionOperatorYank:
+		ed.YankSelection()
+		ed.EnterNormalMode()
+	case keymap.ActionOperatorChange:
+		ed.YankSelection()
+		ed.EnterNormalMode()
+
+	// ── UI ──────────────────────────────────────────────────────
+	case keymap.ActionToggleHelp:
 		w.ToggleHelp()
-	case "e":
-		w.ShowExplain()
+	}
 
-	// Mode switching
-	case "i":
-		w.editor.EnterInsertMode()
-	case "I":
-		w.editor.EnterInsertModeLineStart()
-	case "a":
-		w.editor.EnterInsertModeAppend()
-	case "A":
-		w.editor.EnterInsertModeLineEnd()
-	case "o":
-		w.editor.OpenLineBelow()
-	case "O":
-		w.editor.OpenLineAbove()
-	case "v":
-		w.editor.EnterVisualMode()
-	case "V":
-		w.editor.EnterVisualLineMode()
+	w.syncModeToKeymap()
+}
 
-	// Movement
-	case "h", "ArrowLeft":
-		w.editor.MoveLeft(1)
-	case "j", "ArrowDown":
-		w.editor.MoveDown(1)
-	case "k", "ArrowUp":
-		w.editor.MoveUp(1)
-	case "l", "ArrowRight":
-		w.editor.MoveRight(1)
-	case "w":
-		w.editor.MoveWordForward(1)
-	case "b":
-		w.editor.MoveWordBackward(1)
-	case "0":
-		w.editor.MoveToLineStart()
-	case "$":
-		w.editor.MoveToLineEnd()
-	case "^":
-		w.editor.MoveToFirstNonBlank()
-	case "g":
-		w.editor.MoveToTop()
-	case "G":
-		w.editor.MoveToBottom()
+// executeOperatorMotion handles operator + motion commands (dw, d$, yy, etc.).
+func (w *EditorWidget) executeOperatorMotion(cmd keymap.Command) {
+	count := cmd.Count
+	if count < 1 {
+		count = 1
+	}
 
-	// Editing
-	case "x":
-		w.editor.DeleteChar()
-	case "X":
-		w.editor.DeleteCharBack()
-	case "d":
-		w.editor.DeleteLine()
-	case "D":
-		w.editor.DeleteToLineEnd()
-	case "y":
-		w.editor.YankLine()
-	case "p":
-		w.editor.Paste()
-	case "P":
-		w.editor.PasteBefore()
-	case "u":
-		w.editor.Undo()
-	case "J":
-		w.editor.JoinLines()
+	switch cmd.Action {
+	case keymap.ActionOperatorDelete:
+		w.deleteWithMotion(cmd.Motion, count)
+	case keymap.ActionOperatorYank:
+		w.yankWithMotion(cmd.Motion, count)
+	case keymap.ActionOperatorChange:
+		w.changeWithMotion(cmd.Motion, count)
 	}
 }
 
-func (w *EditorWidget) processVimInsertModeKey(ev KeyEvent) {
-	key := ev.Key
-
-	// Escape exits insert mode
-	if key == "Escape" {
-		w.editor.EnterNormalMode()
-		return
-	}
-
-	// Special keys
-	switch key {
-	case "Backspace":
-		w.editor.DeleteCharBack()
-	case "Delete":
-		w.editor.DeleteChar()
-	case "Enter":
-		w.editor.InsertNewline()
-	case "Tab":
-		w.editor.InsertString("  ")
-	case "ArrowLeft":
-		w.editor.MoveLeft(1)
-	case "ArrowRight":
-		w.editor.MoveRight(1)
-	case "ArrowUp":
-		w.editor.MoveUp(1)
-	case "ArrowDown":
-		w.editor.MoveDown(1)
+func (w *EditorWidget) deleteWithMotion(motion keymap.Action, count int) {
+	ed := w.editor
+	switch motion {
+	case keymap.ActionMoveWordNext: // dw
+		for i := 0; i < count; i++ {
+			ed.DeleteWord()
+		}
+	case keymap.ActionGotoLineEnd: // d$
+		ed.DeleteToLineEnd()
+	case keymap.ActionDeleteLine: // dd
+		for i := 0; i < count; i++ {
+			ed.DeleteLine()
+		}
+	case keymap.ActionMoveDown: // dj
+		for i := 0; i < count+1; i++ {
+			ed.DeleteLine()
+		}
+	case keymap.ActionMoveUp: // dk
+		if ed.Cursor().Row() > 0 {
+			ed.MoveUp(1)
+		}
+		for i := 0; i < count+1; i++ {
+			ed.DeleteLine()
+		}
+	case keymap.ActionGotoTop: // dgg
+		row := ed.Cursor().Row()
+		ed.MoveToTop()
+		for i := 0; i <= row; i++ {
+			ed.DeleteLine()
+		}
+	case keymap.ActionGotoBottom: // dG
+		row := ed.Cursor().Row()
+		total := ed.Buffer().LineCount()
+		for i := 0; i < total-row; i++ {
+			ed.DeleteLine()
+		}
+	default:
+		for i := 0; i < count; i++ {
+			ed.DeleteLine()
+		}
 	}
 }
 
-func (w *EditorWidget) processVimVisualModeKey(ev KeyEvent) {
-	key := ev.Key
-
-	// Escape exits visual mode
-	if key == "Escape" {
-		w.editor.EnterNormalMode()
-		return
+func (w *EditorWidget) yankWithMotion(motion keymap.Action, count int) {
+	ed := w.editor
+	switch motion {
+	case keymap.ActionYankLine: // yy
+		ed.YankLine()
+	default:
+		ed.YankLine()
 	}
+}
 
-	// Movement extends selection
-	switch key {
-	case "h", "ArrowLeft":
-		w.editor.MoveLeft(1)
-	case "j", "ArrowDown":
-		w.editor.MoveDown(1)
-	case "k", "ArrowUp":
-		w.editor.MoveUp(1)
-	case "l", "ArrowRight":
-		w.editor.MoveRight(1)
-	case "w":
-		w.editor.MoveWordForward(1)
-	case "b":
-		w.editor.MoveWordBackward(1)
-	case "0":
-		w.editor.MoveToLineStart()
-	case "$":
-		w.editor.MoveToLineEnd()
-	case "G":
-		w.editor.MoveToBottom()
-	case "g":
-		w.editor.MoveToTop()
+func (w *EditorWidget) changeWithMotion(motion keymap.Action, count int) {
+	ed := w.editor
+	switch motion {
+	case keymap.ActionMoveWordNext: // cw
+		for i := 0; i < count; i++ {
+			ed.DeleteWord()
+		}
+		ed.EnterInsertMode()
+	case keymap.ActionGotoLineEnd: // c$
+		ed.DeleteToLineEnd()
+		ed.EnterInsertMode()
+	case keymap.ActionDeleteLine: // cc
+		ed.MoveToLineStart()
+		ed.DeleteToLineEnd()
+		ed.EnterInsertMode()
+	default:
+		ed.MoveToLineStart()
+		ed.DeleteToLineEnd()
+		ed.EnterInsertMode()
+	}
+}
 
-	// Actions
-	case "y":
-		w.editor.YankSelection()
-		w.editor.EnterNormalMode()
-	case "d", "x":
-		w.editor.YankSelection()
-		w.editor.EnterNormalMode()
-	case "v":
-		w.editor.EnterNormalMode()
+// syncModeToKeymap keeps the keymap mode in sync with the editor mode.
+func (w *EditorWidget) syncModeToKeymap() {
+	switch w.editor.Mode() {
+	case editor.ModeNormal:
+		w.km.SetMode(keymap.ModeNormal)
+	case editor.ModeInsert:
+		w.km.SetMode(keymap.ModeInsert)
+	case editor.ModeVisual:
+		w.km.SetMode(keymap.ModeVisual)
 	}
 }
 
@@ -668,8 +865,24 @@ func (r *editorRenderer) Refresh() {
 func (r *editorRenderer) renderLine(line rpc.RenderLine, y float32, width float32) {
 	w := r.widget
 
-	// Input spans (left-aligned)
-	x := w.leftPadding
+	// Relative line numbers (vim mode only)
+	gutterWidth := float32(0)
+	if w.vimMode {
+		gutterWidth = w.lineNumWidth
+		numStr := fmt.Sprintf("%3d", line.RelativeNumber)
+		numColor := ColorMuted
+		if line.IsCurrentLine {
+			numColor = color.RGBA{R: 200, G: 200, B: 200, A: 255}
+		}
+		numText := canvas.NewText(numStr, numColor)
+		numText.TextSize = 14
+		numText.TextStyle = fyne.TextStyle{Monospace: true}
+		numText.Move(fyne.NewPos(w.leftPadding, y))
+		r.objects = append(r.objects, numText)
+	}
+
+	// Input spans (left-aligned, after gutter)
+	x := w.leftPadding + gutterWidth
 	for _, span := range line.Input {
 		text := canvas.NewText(span.Text, StyleColor(string(span.Style)))
 		text.TextSize = 14
@@ -706,17 +919,25 @@ func (r *editorRenderer) renderLine(line rpc.RenderLine, y float32, width float3
 
 func (r *editorRenderer) renderTilde(y float32) {
 	w := r.widget
+	gutterWidth := float32(0)
+	if w.vimMode {
+		gutterWidth = w.lineNumWidth
+	}
 	tilde := canvas.NewText("~", ColorTilde)
 	tilde.TextSize = 14
 	tilde.TextStyle = fyne.TextStyle{Monospace: true}
-	tilde.Move(fyne.NewPos(w.leftPadding, y))
+	tilde.Move(fyne.NewPos(w.leftPadding+gutterWidth, y))
 	r.objects = append(r.objects, tilde)
 }
 
 func (r *editorRenderer) renderCursor(cursor rpc.CursorState) {
 	w := r.widget
 
-	x := w.leftPadding + float32(cursor.Col)*w.charWidth
+	gutterWidth := float32(0)
+	if w.vimMode {
+		gutterWidth = w.lineNumWidth
+	}
+	x := w.leftPadding + gutterWidth + float32(cursor.Col)*w.charWidth
 	y := w.topPadding + float32(cursor.Row)*(w.lineHeight+w.lineSpacing)
 
 	// Cursor should match text size
@@ -759,9 +980,18 @@ func (r *editorRenderer) renderStatusBar(state *rpc.RenderState, size fyne.Size)
 
 	textY := barY + 6
 
-	// Mode indicator (left) - only show in vim mode
+	// Mode indicator (left) — show in vim mode, also show pending operator
 	if w.vimMode && state.StatusBar != nil && state.StatusBar.Mode != "" {
-		modeText := canvas.NewText(state.StatusBar.Mode, ModeColor(state.StatusBar.Mode))
+		modeLabel := state.StatusBar.Mode
+		modeColor := ModeColor(state.StatusBar.Mode)
+
+		// Show pending operator/count
+		if pending := w.km.State.PendingDisplay(); pending != "" {
+			modeLabel += " " + pending
+			modeColor = ColorPending
+		}
+
+		modeText := canvas.NewText(modeLabel, modeColor)
 		modeText.TextSize = 12
 		modeText.TextStyle = fyne.TextStyle{Monospace: true, Bold: true}
 		modeText.Move(fyne.NewPos(w.leftPadding, textY))
@@ -771,7 +1001,7 @@ func (r *editorRenderer) renderStatusBar(state *rpc.RenderState, size fyne.Size)
 	// Help hints (center)
 	var hints string
 	if w.vimMode {
-		hints = "⌘/ help   ⌘E explain   ⌘K normal mode"
+		hints = "⌘/ help   ⌘E explain   ⌘K simple mode"
 	} else {
 		hints = "⌘/ help   ⌘E explain   ⌘K vim mode"
 	}
@@ -810,20 +1040,30 @@ func (r *editorRenderer) renderPopup(size fyne.Size) {
 				"  w/b          Next/prev word",
 				"  0/$          Start/end of line",
 				"  gg/G         Top/bottom of file",
+				"  5j           Move 5 lines down",
+				"  Ctrl+U/D     Page up/down",
 				"",
 				"Editing",
 				"  i/a          Insert/append mode",
+				"  I/A          Insert start/end of line",
 				"  o/O          Open line below/above",
 				"  x            Delete character",
 				"  dd           Delete line",
+				"  dw           Delete word",
+				"  d$           Delete to end of line",
+				"  yy           Yank line",
+				"  p/P          Paste after/before",
 				"  u            Undo",
-				"  p            Paste",
+				"  Ctrl+R       Redo",
+				"  J            Join lines",
 				"",
 				"General",
 				"  Esc          Normal mode",
+				"  v/V          Visual / visual-line mode",
+				"  ?            Toggle this help",
 				"  ⌘/           Toggle help",
 				"  ⌘E           Explain calculation",
-				"  ⌘K           Switch to normal mode",
+				"  ⌘K           Switch to simple mode",
 				"",
 				"Press any key to close",
 			}
