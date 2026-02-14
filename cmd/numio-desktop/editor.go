@@ -113,11 +113,13 @@ func NewEditorWidget() *EditorWidget {
 		lineNumWidth:    8.4 * 4, // 4 characters wide
 		cursorVisible:   true,
 		activePopup:     PopupNone,
-		vimMode:         true, // Default: vim mode ON
+		vimMode:         false, // Default: simple mode
 		km:              km,
 	}
 
-	// Editor starts in ModeNormal by default — synced with keymap
+	// Simple mode: start in insert mode
+	w.editor.EnterInsertMode()
+	w.km.SetMode(keymap.ModeInsert)
 
 	w.ExtendBaseWidget(w)
 	w.updateState()
@@ -252,7 +254,10 @@ func (w *EditorWidget) TypedRune(r rune) {
 			w.processVimKeymapKey(string(r))
 		}
 	} else {
-		// Simple editor mode: always insert
+		// Simple editor mode: delete selection first if active, then insert
+		if w.editor.HasSelection() {
+			w.editor.DeleteSelection()
+		}
 		w.editor.InsertChar(r)
 	}
 
@@ -412,11 +417,61 @@ func (w *EditorWidget) ToggleHelp() {
 	w.Refresh()
 }
 
+// TypedShortcut handles all Fyne shortcuts (standard + custom).
+func (w *EditorWidget) TypedShortcut(s fyne.Shortcut) {
+	switch s := s.(type) {
+	case *fyne.ShortcutSelectAll:
+		w.SelectAll()
+	case *desktop.CustomShortcut:
+		switch s.KeyName {
+		case fyne.KeySlash:
+			w.ToggleHelp()
+		case fyne.KeyE:
+			w.ShowExplain()
+		case fyne.KeyP:
+			w.ShowHistory()
+		case fyne.KeyK:
+			w.ToggleVimMode()
+		case fyne.KeyA:
+			w.SelectAll()
+		}
+	}
+}
+
+// SelectAll selects all text in the editor.
+func (w *EditorWidget) SelectAll() {
+	w.mu.Lock()
+	w.editor.SelectAll()
+	w.mu.Unlock()
+	w.updateState()
+	w.Refresh()
+}
+
 // ════════════════════════════════════════════════════════════════
 // SIMPLE EDITOR KEY HANDLING (non-vim)
 // ════════════════════════════════════════════════════════════════
 
 func (w *EditorWidget) processNormalEditorKey(key string) {
+	// If there's an active selection, backspace/delete/enter/tab delete it first
+	if w.editor.HasSelection() {
+		switch key {
+		case "Backspace", "Delete":
+			w.editor.DeleteSelection()
+			return
+		case "Enter":
+			w.editor.DeleteSelection()
+			w.editor.InsertNewline()
+			return
+		case "Tab":
+			w.editor.DeleteSelection()
+			w.editor.InsertString("  ")
+			return
+		case "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End":
+			// Movement clears selection
+			w.editor.SetMode(editor.ModeInsert)
+		}
+	}
+
 	switch key {
 	case "Backspace":
 		w.editor.DeleteCharBack()
@@ -654,6 +709,10 @@ func (w *EditorWidget) executeCommand(cmd keymap.Command) {
 	case keymap.ActionOperatorChange:
 		ed.YankSelection()
 		ed.EnterNormalMode()
+
+	// ── Select all ─────────────────────────────────────────────
+	case keymap.ActionSelectAll:
+		ed.SelectAll()
 
 	// ── UI ──────────────────────────────────────────────────────
 	case keymap.ActionToggleHelp:

@@ -46,7 +46,7 @@ func NewEditor() *Editor {
 		viewport:   NewViewport(80, 24),
 		history:    NewHistory(),
 		renderer:   NewRenderer(),
-		mode:       ModeNormal,
+		mode:       ModeInsert,
 		engine:     engine.New(),
 		results:    make(map[int][]rpc.Span),
 		errors:     make(map[int]string),
@@ -490,6 +490,34 @@ func (e *Editor) YankSelection() {
 	e.yankIsLine = e.selection.Mode() == SelectionLine
 }
 
+// DeleteSelection deletes the selected text and returns to insert mode.
+func (e *Editor) DeleteSelection() {
+	if e.selection == nil {
+		return
+	}
+
+	e.saveUndo()
+
+	startRow, startCol, endRow, endCol := e.selection.Bounds()
+	e.buffer.DeleteRange(startRow, startCol, endRow, endCol)
+
+	// Ensure buffer has at least one line
+	if e.buffer.LineCount() == 0 {
+		e.buffer.Clear()
+	}
+
+	e.cursor.SetPosition(startRow, startCol)
+	e.selection = nil
+	e.mode = ModeInsert
+	e.dirty = true
+	e.evaluateAll()
+}
+
+// HasSelection returns whether there is an active selection.
+func (e *Editor) HasSelection() bool {
+	return e.selection != nil
+}
+
 // Paste pastes after the cursor (like 'p' in vim).
 func (e *Editor) Paste() {
 	if e.yankBuffer == "" {
@@ -773,6 +801,20 @@ func (e *Editor) SetContent(content string) {
 	e.selection = nil
 	e.dirty = true
 	e.evaluateAll()
+}
+
+// SelectAll selects all text in the buffer.
+func (e *Editor) SelectAll() {
+	lastRow := e.buffer.LineCount() - 1
+	if lastRow < 0 {
+		lastRow = 0
+	}
+	lastCol := len(e.buffer.Line(lastRow))
+
+	e.selection = NewSelection(0, 0)
+	e.selection.SetActive(lastRow, lastCol)
+	e.cursor.SetPosition(lastRow, lastCol)
+	e.mode = ModeVisual
 }
 
 // Clear resets the editor to empty state.

@@ -25,7 +25,7 @@ func New() *KeyMap {
 		Visual:      NewBindingMap(),
 		Operator:    NewBindingMap(),
 		State:       NewMotionState(),
-		CurrentMode: ModeNormal,
+		CurrentMode: ModeInsert,
 	}
 }
 
@@ -111,6 +111,9 @@ func (km *KeyMap) loadNormalDefaults() {
 	n.Bind("ZZ", ActionSaveQuit)
 	n.Bind("ZQ", ActionForceQuit)
 
+	// Selection
+	n.Bind("ctrl+a", ActionSelectAll)
+
 	// Help & UI
 	n.Bind("?", ActionToggleHelp)
 	n.Bind("f1", ActionToggleHelp)
@@ -138,6 +141,9 @@ func (km *KeyMap) loadInsertDefaults() {
 	i.Bind("right", ActionMoveRight)
 	i.Bind("home", ActionGotoLineStart)
 	i.Bind("end", ActionGotoLineEnd)
+
+	// Selection
+	i.Bind("ctrl+a", ActionSelectAll)
 
 	// Save without leaving insert mode
 	i.Bind("ctrl+s", ActionSave)

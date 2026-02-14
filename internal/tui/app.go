@@ -313,6 +313,12 @@ func (a *App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return a.handleHistoryToggle()
 	}
 
+	// Handle Ctrl+A to select all / clear
+	if key == "ctrl+a" {
+		a.selectAll()
+		return a, nil
+	}
+
 	// Handle Ctrl+R to refresh rates
 	if key == "ctrl+r" {
 		if a.rateStatus.Status != RateStatusFetching {
@@ -697,6 +703,9 @@ func (a *App) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 	case keymap.ActionToggleHelp:
 		a.showHelp = !a.showHelp
 
+	case keymap.ActionSelectAll:
+		a.selectAll()
+
 	case keymap.ActionToggleLineNumbers:
 		// TODO: Implement
 
@@ -954,6 +963,14 @@ func (a *App) joinLines() {
 		a.lines[a.row] = a.lines[a.row] + " " + strings.TrimLeft(a.lines[a.row+1], " \t")
 		a.lines = append(a.lines[:a.row+1], a.lines[a.row+2:]...)
 	}
+}
+
+func (a *App) selectAll() {
+	a.saveUndo()
+	a.lines = []string{""}
+	a.row = 0
+	a.col = 0
+	a.keymap.SetMode(keymap.ModeInsert)
 }
 
 func (a *App) yankLine() {

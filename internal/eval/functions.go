@@ -47,7 +47,8 @@ func init() {
 	registerStringFunctions()
 	registerSequenceFunctions()
 	registerPhysicsConstantFunctions()
-	registerPhysicsFunctions() // NEW: Register all physics functions
+	registerPhysicsFunctions()
+	registerWeatherFunctions()
 
 	// Build function names list for fuzzy matching
 	buildFunctionNamesList()

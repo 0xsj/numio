@@ -30,6 +30,7 @@ func New() *Processor {
 	RegisterDateTimePatterns(p.registry)
 	RegisterCurrencyPatterns(p.registry)
 	RegisterFinancePatterns(p.registry)
+	RegisterWeatherPatterns(p.registry)
 
 	return p
 }
@@ -77,6 +78,19 @@ func (p *Processor) Process(input string) (string, bool) {
 		return input, false
 	}
 
+	// Handle assignments: try NLP on the right-hand side
+	if eqIdx := strings.Index(input, "="); eqIdx > 0 && !strings.Contains(input, "==") {
+		lhs := input[:eqIdx]
+		rhs := strings.TrimSpace(input[eqIdx+1:])
+		if rhs != "" && !looksLikeExpression(rhs) {
+			match := p.registry.Match(rhs)
+			if match != nil {
+				return lhs + "= " + match.Transformed, true
+			}
+		}
+		return input, false
+	}
+
 	// Skip if it looks like it's already a structured expression
 	if looksLikeExpression(input) {
 		return input, false
@@ -105,6 +119,24 @@ func (p *Processor) ProcessWithInfo(input string) *ProcessResult {
 
 	input = strings.TrimSpace(input)
 	if input == "" {
+		return result
+	}
+
+	// Handle assignments: try NLP on the right-hand side
+	if eqIdx := strings.Index(input, "="); eqIdx > 0 && !strings.Contains(input, "==") {
+		lhs := input[:eqIdx]
+		rhs := strings.TrimSpace(input[eqIdx+1:])
+		if rhs != "" && !looksLikeExpression(rhs) {
+			match := p.registry.Match(rhs)
+			if match != nil {
+				result.Output = lhs + "= " + match.Transformed
+				result.Matched = true
+				result.PatternName = match.Pattern.Name
+				result.Captures = match.Captures
+				return result
+			}
+		}
+		result.SkipReason = "assignment"
 		return result
 	}
 
@@ -210,6 +242,8 @@ func containsNaturalLanguage(input string) bool {
 		// Finance
 		"payment", "mortgage", "loan", "tip", "split",
 		"compound", "interest", "percent",
+		// Weather
+		"weather", "temperature", "humidity",
 		// Ranges
 		"between", "and",
 	}

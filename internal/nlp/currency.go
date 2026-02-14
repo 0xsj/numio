@@ -33,6 +33,8 @@ func RegisterCurrencyPatterns(r *PatternRegistry) {
 
 		// Metal patterns
 		patternMetalToFiat(),
+		patternTurkishGold(),
+		patternMetalPriceIn(),
 	})
 }
 
@@ -354,23 +356,26 @@ func patternFiatToCrypto() *Pattern {
 // METAL PATTERNS
 // ════════════════════════════════════════════════════════════════
 
-// patternMetalToFiat: "1 oz gold to USD", "gold price in EUR", "1 ounce silver to dollars"
+// patternMetalToFiat: "1 oz gold to USD", "1 gram gold in USD", "1 kg silver to EUR"
 func patternMetalToFiat() *Pattern {
 	return NewPattern("metal_to_fiat").
-		Regex(`(\d+(?:\.\d+)?)\s*(?:oz|ounce|ounces)?\s*(gold|silver|platinum|palladium|xau|xag|xpt|xpd)\s+(?:to|in)\s+([a-zA-Z]+)`).
+		Regex(`(\d+(?:\.\d+)?)\s*(?:(gram|grams|g|kg|kilogram|kilograms|oz|ounce|ounces)\s+)?(gold|silver|platinum|palladium|xau|xag|xpt|xpd)\s+(?:to|in)\s+([a-zA-Z]+)`).
 		Priority(80).
 		Handler(func(input string, matches []string) (string, bool) {
-			if len(matches) < 4 {
+			if len(matches) < 5 {
 				return "", false
 			}
 
 			amount, ok := ExtractNumber(matches[1])
 			if !ok {
-				amount = 1 // Default to 1 oz
+				amount = 1
 			}
 
-			metal := normalizeMetalName(matches[2])
-			fiat := normalizeCurrencyName(matches[3])
+			weightUnit := strings.ToLower(matches[2])
+			amount = convertWeightToTroyOz(amount, weightUnit)
+
+			metal := normalizeMetalName(matches[3])
+			fiat := normalizeCurrencyName(matches[4])
 
 			if metal == "" || fiat == "" {
 				return "", false
@@ -379,6 +384,96 @@ func patternMetalToFiat() *Pattern {
 			return FormatFloat(amount) + " " + metal + " in " + fiat, true
 		}).
 		Build()
+}
+
+// patternTurkishGold: "1 ceyrek in usd", "çeyrek in lira", "2 tam in usd"
+func patternTurkishGold() *Pattern {
+	return NewPattern("turkish_gold").
+		Regex(`(\d+(?:\.\d+)?)?\s*(?:altin\s+)?(ceyrek|çeyrek|yarim|yarım|tam|ata|cumhuriyet)\s*(?:altin)?\s+(?:to|in)\s+([a-zA-Z]+)`).
+		Priority(85).
+		Handler(func(input string, matches []string) (string, bool) {
+			if len(matches) < 4 {
+				return "", false
+			}
+
+			amount := 1.0
+			if matches[1] != "" {
+				var ok bool
+				amount, ok = ExtractNumber(matches[1])
+				if !ok {
+					amount = 1
+				}
+			}
+
+			denom := strings.ToLower(matches[2])
+			troyOz := turkishGoldToTroyOz(denom)
+			if troyOz == 0 {
+				return "", false
+			}
+
+			totalOz := amount * troyOz
+
+			fiat := normalizeCurrencyName(matches[3])
+			if fiat == "" {
+				return "", false
+			}
+
+			return FormatFloat(totalOz) + " XAU in " + fiat, true
+		}).
+		Build()
+}
+
+// patternMetalPriceIn: "gold in usd", "gold price in eur", "silver in lira"
+func patternMetalPriceIn() *Pattern {
+	return NewPattern("metal_price_in").
+		Regex(`(gold|silver|platinum|palladium|xau|xag|xpt|xpd)\s+(?:price\s+)?(?:to|in)\s+([a-zA-Z]+)`).
+		Priority(70).
+		Handler(func(input string, matches []string) (string, bool) {
+			if len(matches) < 3 {
+				return "", false
+			}
+
+			metal := normalizeMetalName(matches[1])
+			fiat := normalizeCurrencyName(matches[2])
+
+			if metal == "" || fiat == "" {
+				return "", false
+			}
+
+			return "1 " + metal + " in " + fiat, true
+		}).
+		Build()
+}
+
+// convertWeightToTroyOz converts a weight amount to troy ounces.
+// Empty or oz/ounce units return amount as-is.
+func convertWeightToTroyOz(amount float64, unit string) float64 {
+	switch unit {
+	case "g", "gram", "grams":
+		return amount / 31.1035
+	case "kg", "kilogram", "kilograms":
+		return amount * 1000 / 31.1035
+	default:
+		return amount // oz, ounce, ounces, or empty
+	}
+}
+
+// turkishGoldToTroyOz returns the troy ounce equivalent of a Turkish gold denomination.
+// Pure gold weights (22K, multiply by 22/24 for purity):
+//   - Çeyrek: 1.75g → ~1.606g pure → 0.05164 oz
+//   - Yarım: 3.50g → ~3.212g pure → 0.10328 oz
+//   - Tam (Ata/Cumhuriyet): 7.216g → ~6.615g pure → 0.21267 oz
+func turkishGoldToTroyOz(denom string) float64 {
+	switch denom {
+	case "ceyrek", "çeyrek":
+		return 0.05164
+	case "yarim", "yarım":
+		return 0.10328
+	case "tam", "ata", "cumhuriyet":
+		return 0.21267
+	default:
+		return 0
+	}
 }
 
 // ════════════════════════════════════════════════════════════════

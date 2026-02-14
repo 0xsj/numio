@@ -7,7 +7,6 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/driver/desktop"
 
 	"github.com/0xsj/numio/pkg/session"
 )
@@ -132,63 +131,8 @@ func (a *App) saveSession() {
 // ════════════════════════════════════════════════════════════════
 
 func (a *App) registerShortcuts() {
-	c := a.window.Canvas()
-
-	// Cmd+/ and Ctrl+/ → Toggle help
-	c.AddShortcut(&desktop.CustomShortcut{
-		KeyName:  fyne.KeySlash,
-		Modifier: fyne.KeyModifierSuper,
-	}, func(_ fyne.Shortcut) {
-		a.editor.ToggleHelp()
-	})
-	c.AddShortcut(&desktop.CustomShortcut{
-		KeyName:  fyne.KeySlash,
-		Modifier: fyne.KeyModifierControl,
-	}, func(_ fyne.Shortcut) {
-		a.editor.ToggleHelp()
-	})
-
-	// Cmd+E and Ctrl+E → Explain
-	c.AddShortcut(&desktop.CustomShortcut{
-		KeyName:  fyne.KeyE,
-		Modifier: fyne.KeyModifierSuper,
-	}, func(_ fyne.Shortcut) {
-		a.editor.ShowExplain()
-	})
-	c.AddShortcut(&desktop.CustomShortcut{
-		KeyName:  fyne.KeyE,
-		Modifier: fyne.KeyModifierControl,
-	}, func(_ fyne.Shortcut) {
-		a.editor.ShowExplain()
-	})
-
-	// Cmd+P and Ctrl+P → Price history chart
-	c.AddShortcut(&desktop.CustomShortcut{
-		KeyName:  fyne.KeyP,
-		Modifier: fyne.KeyModifierSuper,
-	}, func(_ fyne.Shortcut) {
-		a.editor.ShowHistory()
-	})
-	c.AddShortcut(&desktop.CustomShortcut{
-		KeyName:  fyne.KeyP,
-		Modifier: fyne.KeyModifierControl,
-	}, func(_ fyne.Shortcut) {
-		a.editor.ShowHistory()
-	})
-
-	// Cmd+K and Ctrl+K → Toggle vim mode
-	c.AddShortcut(&desktop.CustomShortcut{
-		KeyName:  fyne.KeyK,
-		Modifier: fyne.KeyModifierSuper,
-	}, func(_ fyne.Shortcut) {
-		a.editor.ToggleVimMode()
-	})
-	c.AddShortcut(&desktop.CustomShortcut{
-		KeyName:  fyne.KeyK,
-		Modifier: fyne.KeyModifierControl,
-	}, func(_ fyne.Shortcut) {
-		a.editor.ToggleVimMode()
-	})
+	// All shortcuts are handled in EditorWidget.TypedShortcut
+	// to avoid Fyne routing conflicts between canvas and widget handlers.
 }
 
 // ════════════════════════════════════════════════════════════════

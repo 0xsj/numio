@@ -66,6 +66,9 @@ const (
 	ActionToggleHelp  Action = "toggle_help"
 	ActionRefreshRate Action = "refresh_rate"
 
+	// Selection
+	ActionSelectAll Action = "select_all"
+
 	// UI toggles
 	ActionToggleLineNumbers Action = "toggle_line_numbers"
 	ActionToggleWrap        Action = "toggle_wrap"
@@ -138,6 +141,9 @@ var actionRegistry = map[Action]ActionMetadata{
 	ActionSaveQuit:    {"Save & Quit", "Save and quit", false, false, false},
 	ActionToggleHelp:  {"Toggle Help", "Show/hide help", false, false, false},
 	ActionRefreshRate: {"Refresh Rates", "Refresh currency rates", false, false, false},
+
+	// Selection
+	ActionSelectAll: {"Select All", "Select all text", false, false, false},
 
 	// UI toggles
 	ActionToggleLineNumbers: {"Toggle Line Numbers", "Show/hide line numbers", false, false, false},
