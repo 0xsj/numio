@@ -4,7 +4,7 @@ go 1.25.5
 
 require (
 	fyne.io/fyne/v2 v2.7.2
-	github.com/BurntSushi/toml v1.5.0
+	github.com/BurntSushi/toml v1.6.0
 	github.com/charmbracelet/bubbletea v1.3.4
 	github.com/charmbracelet/lipgloss v1.1.0
 	modernc.org/sqlite v1.45.0
